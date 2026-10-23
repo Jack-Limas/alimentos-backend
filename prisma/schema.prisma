@@ -1,0 +1,12 @@
+// Prisma schema for alimentos-backend.
+// Business models are added in their own phases (see docs/api-contract.md, section 2).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}

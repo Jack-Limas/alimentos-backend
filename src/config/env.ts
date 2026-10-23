@@ -59,7 +59,11 @@ export class EnvValidationError extends Error {
  * Parses and validates the given environment. Never includes values in the
  * error message, only variable names, so secrets are not leaked to logs.
  */
-export function parseEnv(source: NodeJS.ProcessEnv): Env {
+export function parseEnv(rawSource: NodeJS.ProcessEnv): Env {
+  // Empty values (e.g. `PORT=` copied from .env.example) are treated as unset.
+  const source = Object.fromEntries(
+    Object.entries(rawSource).filter(([, value]) => value !== undefined && value.trim() !== ''),
+  );
   const result = envSchema.safeParse(source);
   if (result.success) {
     return result.data;

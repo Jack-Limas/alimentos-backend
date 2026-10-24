@@ -11,7 +11,9 @@ export const REDACTED_PATHS = [
   'headers["set-cookie"]',
 ];
 
-export function buildLoggerOptions(nodeEnv: Env['NODE_ENV']): NonNullable<FastifyServerOptions['logger']> {
+export function buildLoggerOptions(
+  nodeEnv: Env['NODE_ENV'],
+): NonNullable<FastifyServerOptions['logger']> {
   return {
     level: nodeEnv === 'production' ? 'info' : nodeEnv === 'test' ? 'silent' : 'debug',
     redact: { paths: REDACTED_PATHS, censor: '[REDACTED]' },

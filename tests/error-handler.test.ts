@@ -25,7 +25,11 @@ describe('error handler', () => {
 
     expect(res.statusCode).toBe(409);
     expect(res.json()).toEqual({
-      error: { code: 'DUPLICATE', message: 'Email already registered', details: { field: 'email' } },
+      error: {
+        code: 'DUPLICATE',
+        message: 'Email already registered',
+        details: { field: 'email' },
+      },
     });
     await app.close();
   });

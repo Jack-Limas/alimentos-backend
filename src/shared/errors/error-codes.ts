@@ -1,0 +1,20 @@
+/**
+ * Error codes from docs/api-contract.md, section 3, mapped to their HTTP status.
+ */
+export const ERROR_CODES = {
+  VALIDATION_ERROR: 400,
+  UNAUTHENTICATED: 401,
+  INVALID_CREDENTIALS: 401,
+  TOKEN_EXPIRED: 401,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  INVALID_STATUS_TRANSITION: 409,
+  INSUFFICIENT_STOCK: 409,
+  STALE_PROPOSAL: 409,
+  DUPLICATE: 409,
+  TOO_MANY_REQUESTS: 429,
+  INTERNAL_ERROR: 500,
+  AI_UNAVAILABLE: 503,
+} as const;
+
+export type ErrorCode = keyof typeof ERROR_CODES;

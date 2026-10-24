@@ -23,7 +23,8 @@ export interface HealthService {
   getReadiness(): Promise<ReadinessStatus>;
 }
 
-const DEFAULT_DB_TIMEOUT_MS = 3000;
+// Neon may need a few seconds to wake a suspended compute.
+const DEFAULT_DB_TIMEOUT_MS = 5000;
 
 function withTimeout(check: DatabaseCheck, timeoutMs: number): Promise<void> {
   let timer: NodeJS.Timeout | undefined;

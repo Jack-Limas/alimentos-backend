@@ -134,6 +134,7 @@ stateDiagram-v2
 | 409 | `INVALID_STATUS_TRANSITION`, `INSUFFICIENT_STOCK`, `STALE_PROPOSAL`, `DUPLICATE` |
 | 429 | `TOO_MANY_REQUESTS` (incluye `Retry-After`) |
 | 503 | `AI_UNAVAILABLE` (con `details.category`) |
+| 500 | `INTERNAL_ERROR` (error inesperado; sin detalles internos en producción) |
 
 ---
 
@@ -156,6 +157,8 @@ Roles: **A** = ADMIN, **O** = OPERATOR, **P** = público.
 | GET | `/auth/me` | A, O | `{ id, email, name, role }` |
 
 El access token va en `Authorization: Bearer`; vive en memoria con copia en sessionStorage.
+
+El access token es un JWT `{ sub, role }` firmado con `JWT_ACCESS_SECRET` (duración `ACCESS_TOKEN_TTL`). El refresh token es **opaco** (48 bytes aleatorios en base64url): en la BD solo se guarda su hash SHA-256, viaja únicamente en la cookie `refresh_token` y dura `REFRESH_TOKEN_TTL_DAYS`. Cada refresh lo rota dentro de la misma familia; presentar uno ya rotado revoca toda la familia.
 
 ### 4.3 Productos — [OBL]
 | Método | Ruta | Rol | Notas |
@@ -292,11 +295,12 @@ El cliente solo envía IDs. El backend arma el contexto filtrado por rol. Si fal
 |---|---|---|
 | backend | `NODE_ENV`, `PORT` | Render inyecta `PORT`; local 4000 |
 | backend | `DATABASE_URL`, `DIRECT_URL` | Neon (pooled / directa para migraciones) |
-| backend | `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL` | Autenticación |
+| backend | `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL_DAYS` | Autenticación (refresh opaco: no necesita secreto) |
+| backend | `LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_MINUTES` | Límite de intentos de login por email + IP |
 | backend | `SHEET_LINK_SECRET` | Enlaces firmados [EXTRA] |
 | backend | `CORS_ORIGINS` | Lista separada por comas |
 | backend | `AI_SERVICE_URL`, `AI_INTERNAL_KEY`, `AI_TIMEOUT_MS` | Llamadas a la IA |
 | backend | `CLOUDINARY_URL` | Fotos [EXTRA] |
-| backend | `SEED_ADMIN_PASSWORD`, `SEED_OPERATOR_PASSWORD`, `SEED_SIZE` | Seed (sin valores por defecto; `SEED_SIZE=large` solo en local o rama `bench`) |
+| backend | `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_OPERATOR_EMAIL`, `SEED_OPERATOR_PASSWORD`, `SEED_SIZE` | Seed (sin valores por defecto; solo las valida el script de seed; `SEED_SIZE=large` solo en local o rama `bench`) |
 | ai | `PORT`, `AI_INTERNAL_KEY`, `GEMINI_API_KEY`, `GEMINI_MODEL` | Solo este repo conoce la clave de Gemini |
 | frontend | `NEXT_PUBLIC_API_URL`, `API_URL_INTERNAL` | URL del backend (cliente / servidor Next) |

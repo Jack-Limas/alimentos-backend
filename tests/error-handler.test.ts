@@ -8,6 +8,9 @@ async function buildAppWithFailingRoutes(nodeEnv: 'test' | 'production' = 'test'
   app.get('/app-error', () => {
     throw new AppError(409, 'DUPLICATE', 'Email already registered', { field: 'email' });
   });
+  app.get('/rate-limited', () => {
+    throw new AppError(429, 'TOO_MANY_REQUESTS', 'Slow down', {}, { 'Retry-After': '42' });
+  });
   app.get('/zod-error', () => {
     z.object({ quantity: z.number().positive() }).parse({ quantity: -1 });
   });
@@ -18,6 +21,17 @@ async function buildAppWithFailingRoutes(nodeEnv: 'test' | 'production' = 'test'
 }
 
 describe('error handler', () => {
+  it('sends the headers carried by AppError', async () => {
+    const app = await buildAppWithFailingRoutes();
+
+    const res = await app.inject({ method: 'GET', url: '/rate-limited' });
+
+    expect(res.statusCode).toBe(429);
+    expect(res.headers['retry-after']).toBe('42');
+    expect(res.json<{ error: { code: string } }>().error.code).toBe('TOO_MANY_REQUESTS');
+    await app.close();
+  });
+
   it('serializes AppError with its status, code and details', async () => {
     const app = await buildAppWithFailingRoutes();
 

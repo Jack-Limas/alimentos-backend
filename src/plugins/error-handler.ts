@@ -52,6 +52,9 @@ const errorHandlerPlugin: FastifyPluginCallback<ErrorHandlerOptions> = (app, opt
 
   app.setErrorHandler((error: unknown, request, reply) => {
     if (error instanceof AppError) {
+      if (error.headers) {
+        reply.headers(error.headers);
+      }
       return send(reply, error.statusCode, error.code, error.message, error.details);
     }
 

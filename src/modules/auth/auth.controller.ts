@@ -21,10 +21,6 @@ function context(request: FastifyRequest): RequestContext {
   };
 }
 
-function secondsUntil(date: Date): number {
-  return Math.max(0, Math.floor((date.getTime() - Date.now()) / 1000));
-}
-
 export function createAuthController(service: AuthService): AuthController {
   return {
     login: async (request, reply) => {
@@ -33,7 +29,7 @@ export function createAuthController(service: AuthService): AuthController {
       reply.setCookie(
         REFRESH_COOKIE_NAME,
         result.refreshToken,
-        refreshCookieOptions(secondsUntil(result.refreshExpiresAt)),
+        refreshCookieOptions(result.refreshMaxAgeSeconds),
       );
       // The refresh token travels only in the HttpOnly cookie, never in the body.
       return { accessToken: result.accessToken, user: result.user };
@@ -44,7 +40,7 @@ export function createAuthController(service: AuthService): AuthController {
       reply.setCookie(
         REFRESH_COOKIE_NAME,
         result.refreshToken,
-        refreshCookieOptions(secondsUntil(result.refreshExpiresAt)),
+        refreshCookieOptions(result.refreshMaxAgeSeconds),
       );
       return { accessToken: result.accessToken };
     },

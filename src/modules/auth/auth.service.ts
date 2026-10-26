@@ -31,6 +31,8 @@ export interface IssuedRefreshToken {
   /** Raw opaque token: only ever sent in the HttpOnly cookie, never in a body. */
   refreshToken: string;
   refreshExpiresAt: Date;
+  /** Cookie Max-Age: REFRESH_TOKEN_TTL_DAYS in seconds. */
+  refreshMaxAgeSeconds: number;
 }
 
 export interface LoginResult extends IssuedRefreshToken {
@@ -99,6 +101,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       refreshToken,
       tokenHash: hashRefreshToken(refreshToken),
       refreshExpiresAt: new Date(clock().getTime() + config.refreshTokenTtlDays * DAY_MS),
+      refreshMaxAgeSeconds: config.refreshTokenTtlDays * (DAY_MS / 1000),
     };
   }
 
@@ -189,6 +192,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
         accessToken: deps.signAccessToken({ sub: user.id, role: user.role }),
         refreshToken: issued.refreshToken,
         refreshExpiresAt: issued.refreshExpiresAt,
+        refreshMaxAgeSeconds: issued.refreshMaxAgeSeconds,
         user: toPublicUser(user),
       };
     },
@@ -238,6 +242,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
         accessToken: deps.signAccessToken({ sub: user.id, role: user.role }),
         refreshToken: next.refreshToken,
         refreshExpiresAt: next.refreshExpiresAt,
+        refreshMaxAgeSeconds: next.refreshMaxAgeSeconds,
       };
     },
 

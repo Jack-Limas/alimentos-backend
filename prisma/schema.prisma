@@ -28,6 +28,7 @@ model User {
 
   // Back-relations required by Prisma; they add no columns to "users".
   refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
 
   @@map("users")
 }
@@ -61,4 +62,21 @@ model LoginAttempt {
 
   @@index([email, ip, createdAt])
   @@map("login_attempts")
+}
+
+/// Append-only audit trail. Never stores passwords or tokens.
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @db.Uuid
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId])
+  @@map("audit_logs")
 }

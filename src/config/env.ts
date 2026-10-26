@@ -23,11 +23,16 @@ export const envSchema = z.object({
   CORS_ORIGINS: corsOrigins,
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
 
-  // Authentication (required from the auth phase)
-  JWT_ACCESS_SECRET: optionalString,
-  JWT_REFRESH_SECRET: optionalString,
-  ACCESS_TOKEN_TTL: optionalString,
-  REFRESH_TOKEN_TTL: optionalString,
+  // Authentication. Refresh tokens are opaque (hashed in the DB), so they need no secret.
+  JWT_ACCESS_SECRET: z.string().min(32, 'must be at least 32 characters long'),
+  ACCESS_TOKEN_TTL: z
+    .string()
+    .trim()
+    .regex(/^\d+[smhd]$/, 'must be a duration such as 15m, 1h or 30s')
+    .default('15m'),
+  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(7),
+  LOGIN_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(100).default(5),
+  LOGIN_WINDOW_MINUTES: z.coerce.number().int().min(1).max(1440).default(15),
 
   // Signed dispatch sheet links [EXTRA]
   SHEET_LINK_SECRET: optionalString,
@@ -40,10 +45,7 @@ export const envSchema = z.object({
   // Product photos [EXTRA]
   CLOUDINARY_URL: optionalString,
 
-  // Seed
-  SEED_ADMIN_PASSWORD: optionalString,
-  SEED_OPERATOR_PASSWORD: optionalString,
-  SEED_SIZE: z.enum(['small', 'large']).optional(),
+  // SEED_* variables are validated only by the seed script (prisma/seed.ts).
 });
 
 export type Env = z.infer<typeof envSchema>;

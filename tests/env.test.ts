@@ -6,6 +6,7 @@ const validEnv = {
   DATABASE_URL: 'postgresql://user@localhost:5432/app',
   DIRECT_URL: 'postgresql://user@localhost:5432/app',
   CORS_ORIGINS: 'http://localhost:3000',
+  JWT_ACCESS_SECRET: 'test-access-secret-0123456789abcdef0123456789',
 };
 
 describe('parseEnv', () => {
@@ -33,10 +34,32 @@ describe('parseEnv', () => {
   });
 
   it('treats empty values as unset', () => {
-    const env = parseEnv({ ...validEnv, PORT: '', JWT_ACCESS_SECRET: '' });
+    const env = parseEnv({ ...validEnv, PORT: '', AI_INTERNAL_KEY: '' });
 
     expect(env.PORT).toBe(4000);
-    expect(env.JWT_ACCESS_SECRET).toBeUndefined();
+    expect(env.AI_INTERNAL_KEY).toBeUndefined();
+  });
+
+  it('applies the auth defaults', () => {
+    const env = parseEnv(validEnv);
+
+    expect(env.ACCESS_TOKEN_TTL).toBe('15m');
+    expect(env.REFRESH_TOKEN_TTL_DAYS).toBe(7);
+    expect(env.LOGIN_MAX_ATTEMPTS).toBe(5);
+    expect(env.LOGIN_WINDOW_MINUTES).toBe(15);
+  });
+
+  it('requires JWT_ACCESS_SECRET with at least 32 characters', () => {
+    const { JWT_ACCESS_SECRET: _omitted, ...withoutSecret } = validEnv;
+
+    expect(() => parseEnv(withoutSecret)).toThrow(/JWT_ACCESS_SECRET: missing required variable/);
+    expect(() => parseEnv({ ...validEnv, JWT_ACCESS_SECRET: 'short' })).toThrow(/at least 32/);
+  });
+
+  it('rejects an invalid ACCESS_TOKEN_TTL', () => {
+    expect(() => parseEnv({ ...validEnv, ACCESS_TOKEN_TTL: 'forever' })).toThrow(
+      /ACCESS_TOKEN_TTL/,
+    );
   });
 
   it('never includes variable values in the error message', () => {

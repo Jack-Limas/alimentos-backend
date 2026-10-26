@@ -60,6 +60,11 @@ Capas del backend: `route → controller → service → repository (Prisma)`.
 | GET    | `/health`              | `{ status: "ok", service, version, uptimeSec }` (sin BD; Render)        |
 | GET    | `/api/v1/health`       | Igual que `/health`                                                     |
 | GET    | `/api/v1/health/ready` | `{ status: "ok", db: "up" }` o 503 `{ status: "degraded", db: "down" }` |
+| POST   | `/api/v1/auth/login`   | `{ accessToken, user }` + cookie `refresh_token`                        |
+| POST   | `/api/v1/auth/refresh` | `{ accessToken }` + cookie rotada                                       |
+| POST   | `/api/v1/auth/logout`  | 204 y cookie borrada                                                    |
+| GET    | `/api/v1/auth/me`      | `{ data: { id, email, name, role } }` (Bearer)                          |
+| GET    | `/api/v1/audit-logs`   | Lista paginada; solo `ADMIN`; filtros `action`, `userId`, `from`, `to`  |
 
 Todas las respuestas incluyen `Server-Timing: app;dur=<ms>`. Los errores siguen el formato
 `{ "error": { "code", "message", "details" } }`.
@@ -76,6 +81,7 @@ npm ci
 cp .env.example .env   # y completa los valores
 npx prisma generate
 npx prisma migrate dev
+npx prisma db seed     # crea o actualiza el ADMIN y el OPERATOR demo
 npm run dev
 curl -i http://localhost:4000/health
 ```
@@ -91,20 +97,24 @@ Plantilla en [.env.example](.env.example). Nunca se commitean valores reales.
 | `DATABASE_URL`           | Sí          | Conexión pooled de Neon (la usa la app)                  |
 | `DIRECT_URL`             | Sí          | Conexión directa de Neon (la usan las migraciones)       |
 | `CORS_ORIGINS`           | Sí          | Orígenes permitidos separados por comas                  |
-| `JWT_ACCESS_SECRET`      | Fase auth   | Firma del access token                                   |
-| `JWT_REFRESH_SECRET`     | Fase auth   | Firma del refresh token                                  |
-| `ACCESS_TOKEN_TTL`       | Fase auth   | Duración del access token                                |
-| `REFRESH_TOKEN_TTL`      | Fase auth   | Duración del refresh token                               |
+| `JWT_ACCESS_SECRET`      | Sí          | Firma del access token (mínimo 32 caracteres)            |
+| `ACCESS_TOKEN_TTL`       | No          | Duración del access token (`15m` por defecto)            |
+| `REFRESH_TOKEN_TTL_DAYS` | No          | Días de vida del refresh token (7 por defecto)           |
+| `LOGIN_MAX_ATTEMPTS`     | No          | Intentos fallidos por email + IP (5 por defecto)         |
+| `LOGIN_WINDOW_MINUTES`   | No          | Ventana del límite de intentos (15 por defecto)          |
 | `SHEET_LINK_SECRET`      | [EXTRA]     | Enlaces firmados de hoja de despacho                     |
 | `AI_SERVICE_URL`         | Fase IA     | URL de `alimentos-ai`                                    |
 | `AI_INTERNAL_KEY`        | Fase IA     | Clave enviada en `X-Internal-Key`                        |
 | `AI_TIMEOUT_MS`          | Fase IA     | Timeout de las llamadas a la IA                          |
 | `CLOUDINARY_URL`         | [EXTRA]     | Fotos de productos                                       |
-| `SEED_ADMIN_PASSWORD`    | Seed        | Contraseña inicial del admin (sin valor por defecto)     |
-| `SEED_OPERATOR_PASSWORD` | Seed        | Contraseña inicial del operador (sin valor por defecto)  |
+| `SEED_ADMIN_EMAIL`       | Seed        | Email del admin demo (sin valor por defecto)             |
+| `SEED_ADMIN_PASSWORD`    | Seed        | 12+ caracteres con mayúscula, minúscula, número, símbolo |
+| `SEED_OPERATOR_EMAIL`    | Seed        | Email del operador demo (sin valor por defecto)          |
+| `SEED_OPERATOR_PASSWORD` | Seed        | Contraseña del operador demo (sin valor por defecto)     |
 | `SEED_SIZE`              | Seed        | `small` · `large` (`large` solo en local o rama `bench`) |
 
 Si falta una variable obligatoria el servidor no arranca e indica cuál falta (sin mostrar valores).
+Las `SEED_*` solo las valida el script de seed.
 
 ## Scripts
 
@@ -152,12 +162,64 @@ Render no ejecuta migraciones.
 
 Las variables de entorno se configuran en el panel de Render.
 
-## Autenticación (fase posterior)
+## Autenticación
 
 El frontend vive en `*.vercel.app` y la API en `*.onrender.com` (sitios distintos, sin dominio
-propio). Por eso el refresh token irá en una cookie `HttpOnly; Secure; SameSite=None;
-Path=/api/v1/auth`, con el access token en `Authorization: Bearer` como respaldo. CORS usa una
-allowlist (`CORS_ORIGINS`) con `credentials: true`.
+propio). CORS usa una allowlist (`CORS_ORIGINS`) con `credentials: true`.
+
+- **Access token**: JWT `{ sub, role }` firmado con `JWT_ACCESS_SECRET`, vida `ACCESS_TOKEN_TTL`.
+  Va en `Authorization: Bearer`.
+- **Refresh token**: opaco (48 bytes aleatorios en base64url). En la BD solo se guarda su hash
+  SHA-256. Viaja **solo** en la cookie `refresh_token` (`HttpOnly; Secure; SameSite=None;
+Path=/api/v1/auth; Max-Age = REFRESH_TOKEN_TTL_DAYS`), nunca en el body.
+- **Rotación**: cada `/auth/refresh` revoca el token actual y crea uno nuevo en la misma familia,
+  en una sola transacción. Si llega un token ya rotado (robado o reutilizado) se revoca **toda la
+  familia** y se audita `TOKEN_REUSE_DETECTED`.
+- **Contraseñas**: bcrypt con cost 12. Si el email no existe se compara igual contra un hash
+  ficticio, para que el tiempo de respuesta no revele qué cuentas existen.
+- **Errores uniformes**: email inexistente, contraseña incorrecta o usuario inactivo responden el
+  mismo `401 INVALID_CREDENTIALS`.
+- **Límite de intentos**: al llegar a `LOGIN_MAX_ATTEMPTS` fallos para el mismo email + IP dentro
+  de `LOGIN_WINDOW_MINUTES`, el login responde `429 TOO_MANY_REQUESTS` con `Retry-After` y se
+  audita `LOGIN_BLOCKED`. Un login correcto reinicia el contador. `trustProxy` está activo para que
+  `request.ip` sea la IP real detrás del proxy de Render.
+- **Autorización**: `app.authenticate` valida el Bearer (`401 TOKEN_EXPIRED` si expiró,
+  `401 UNAUTHENTICATED` si es inválido) y `app.authorize('ADMIN')` responde `403 FORBIDDEN`. Los
+  roles siempre se validan en el servidor.
+- **Auditoría**: `AuditService.record(...)` guarda `LOGIN_SUCCESS`, `LOGIN_BLOCKED`,
+  `TOKEN_REUSE_DETECTED` y `LOGOUT`. Nunca guarda contraseñas ni tokens en `metadata`.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant B as Navegador
+  participant A as API
+  participant D as PostgreSQL
+
+  B->>A: POST /auth/login { email, password }
+  A->>D: intentos fallidos (email, ip) en la ventana
+  A->>D: usuario + bcrypt.compare
+  A->>D: crea refresh R1 (familia F, solo hash)
+  A-->>B: 200 { accessToken, user } + Set-Cookie R1
+
+  B->>A: POST /auth/refresh (cookie R1)
+  A->>D: transacción: revoca R1 → crea R2 en F
+  A-->>B: 200 { accessToken } + Set-Cookie R2
+
+  Note over B,A: Un atacante reutiliza R1 (ya rotado)
+  B->>A: POST /auth/refresh (cookie R1)
+  A->>D: R1 revocado → revoca toda la familia F
+  A->>D: audita TOKEN_REUSE_DETECTED
+  A-->>B: 401 UNAUTHENTICATED
+  Note over B,A: R2 también deja de servir: hay que volver a iniciar sesión
+```
+
+### Usuarios demo (seed)
+
+`npx prisma db seed` crea o actualiza (upsert por email) un `ADMIN` y un `OPERATOR` a partir de
+`SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_OPERATOR_EMAIL` y `SEED_OPERATOR_PASSWORD`. No hay
+valores por defecto: si falta alguna variable o la contraseña del admin es débil, falla con un
+mensaje que nombra la variable sin mostrar su valor. Es idempotente y nunca imprime contraseñas.
 
 ## CI
 

@@ -37,7 +37,7 @@ describe('parseSeedConfig', () => {
       /SEED_ADMIN_PASSWORD: must contain at least 12 characters, an uppercase letter, a number, a symbol/,
     );
     expect(() => parseSeedConfig({ ...validEnv, SEED_ADMIN_PASSWORD: weak })).toThrow(
-      expect.objectContaining({ message: expect.not.stringContaining(`${weak}\n`) as unknown }),
+      expect.objectContaining({ message: expect.not.stringContaining(weak) as unknown }),
     );
   });
 

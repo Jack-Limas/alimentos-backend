@@ -50,3 +50,15 @@ model RefreshToken {
   @@index([familyId])
   @@map("refresh_tokens")
 }
+
+/// One row per login attempt; used for the per (email, ip) login limit.
+model LoginAttempt {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String
+  ip        String
+  success   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([email, ip, createdAt])
+  @@map("login_attempts")
+}

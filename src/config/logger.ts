@@ -1,7 +1,17 @@
 import type { FastifyServerOptions } from 'fastify';
 import type { Env } from './env.js';
 
-/** Header values that must never reach the logs. */
+/** Field names that hold credentials. Pino has no partial-key wildcards, so they are listed. */
+const SENSITIVE_FIELDS = [
+  'password',
+  'token',
+  'accessToken',
+  'refreshToken',
+  'refresh_token',
+  'tokenHash',
+];
+
+/** Values that must never reach the logs: auth headers, cookies, passwords and tokens. */
 export const REDACTED_PATHS = [
   'req.headers.authorization',
   'req.headers.cookie',
@@ -9,6 +19,9 @@ export const REDACTED_PATHS = [
   'headers.authorization',
   'headers.cookie',
   'headers["set-cookie"]',
+  'body.password',
+  'req.body.password',
+  ...SENSITIVE_FIELDS.flatMap((field) => [field, `*.${field}`, `*.*.${field}`]),
 ];
 
 export function buildLoggerOptions(

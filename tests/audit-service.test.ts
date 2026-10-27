@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createAuditService, sanitizeMetadata } from '../src/modules/audit/audit.service.js';
+import {
+  buildAuditEntry,
+  createAuditService,
+  sanitizeMetadata,
+} from '../src/modules/audit/audit.service.js';
 import { createInMemoryAuditLogRepository } from './helpers/in-memory-repositories.js';
 
 describe('sanitizeMetadata', () => {
@@ -28,5 +32,24 @@ describe('AuditService', () => {
     expect(page.meta).toEqual({ page: 1, pageSize: 1, total: 2 });
     expect(page.data[0]).toMatchObject({ action: 'B', userId: 'u1', ip: '1.2.3.4' });
     expect(repository.entries[0]?.metadata).toEqual({ n: 1 });
+  });
+});
+
+describe('buildAuditEntry', () => {
+  it('fills nulls and strips credentials so repositories can write it in their transaction', () => {
+    expect(
+      buildAuditEntry({
+        action: 'INVENTORY_ENTRY',
+        entity: 'InventoryLot',
+        metadata: { quantity: 5, token: 'x', nested: { password: 'y', expiryDate: '2026-11-01' } },
+      }),
+    ).toEqual({
+      userId: null,
+      action: 'INVENTORY_ENTRY',
+      entity: 'InventoryLot',
+      entityId: null,
+      metadata: { quantity: 5, nested: { expiryDate: '2026-11-01' } },
+      ip: null,
+    });
   });
 });

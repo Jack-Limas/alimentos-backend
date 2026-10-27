@@ -80,3 +80,39 @@ model AuditLog {
   @@index([userId])
   @@map("audit_logs")
 }
+
+// Products and inventory (docs/api-contract.md, sections 2 and 4.3-4.4).
+
+enum ProductCategory {
+  FRUITS_VEGETABLES
+  DAIRY
+  MEAT_POULTRY
+  FISH
+  BAKERY
+  GRAINS_LEGUMES
+  CANNED
+  BEVERAGES
+  FROZEN
+  OTHER
+}
+
+/// No unit conversions: quantities are always in the product's unit.
+enum Unit {
+  KG
+  L
+  UNIT
+  BOX
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum MovementType {
+  ENTRY
+  EXIT_DISPATCH
+  EXIT_WASTE
+  ADJUSTMENT
+  RETURN
+}

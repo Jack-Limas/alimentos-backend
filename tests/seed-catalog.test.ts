@@ -8,6 +8,11 @@ import {
 } from '../src/modules/inventory/domain/index.js';
 import { CATALOG } from '../src/seed/catalog.js';
 import { buildDemoInventory, type DemoLot, type DemoMovement } from '../src/seed/demo-inventory.js';
+import {
+  seedCatalog,
+  type CatalogProduct,
+  type CatalogSeedStore,
+} from '../src/seed/seed-catalog.js';
 
 const TODAY = '2026-10-26';
 const NOW = new Date('2026-10-26T15:00:00Z'); // 10:00 in Bogota
@@ -177,5 +182,74 @@ describe('buildDemoInventory', () => {
       expect(daysBetween(original.expiryDate, lot.expiryDate)).toBe(40);
       expect(lot.quantity).toBe(original.quantity);
     });
+  });
+});
+
+/** In-memory store with the same rules as the Prisma one (unique names). */
+function createMemoryStore() {
+  const state = {
+    products: [] as CatalogProduct[],
+    lots: [] as DemoLot[],
+    movements: [] as DemoMovement[],
+  };
+  const store: CatalogSeedStore = {
+    countProducts: () => Promise.resolve(state.products.length),
+    insertCatalogWithInventory(products, lots, movements) {
+      state.products.push(...products);
+      state.lots.push(...lots);
+      state.movements.push(...movements);
+      return Promise.resolve();
+    },
+    createMissingProducts(products) {
+      const missing = products.filter((p) => !state.products.some((e) => e.name === p.name));
+      state.products.push(...missing);
+      return Promise.resolve(missing.length);
+    },
+  };
+  return { state, store };
+}
+
+describe('seedCatalog', () => {
+  it('seeds the catalog with inventory once and never duplicates it', async () => {
+    const { state, store } = createMemoryStore();
+
+    const first = await seedCatalog({ store, adminUserId: 'admin-id', today: TODAY });
+    const counts = [state.products.length, state.lots.length, state.movements.length];
+    const second = await seedCatalog({ store, adminUserId: 'admin-id', today: TODAY });
+
+    expect(first).toMatchObject({ productsCreated: CATALOG.length, inventorySeeded: true });
+    expect(first.lotsCreated).toBe(counts[1]);
+    expect(second).toEqual({
+      productsCreated: 0,
+      lotsCreated: 0,
+      movementsCreated: 0,
+      inventorySeeded: false,
+    });
+    expect([state.products.length, state.lots.length, state.movements.length]).toEqual(counts);
+  });
+
+  it('adds catalog products that are missing without touching inventory', async () => {
+    const { state, store } = createMemoryStore();
+    await seedCatalog({
+      store,
+      adminUserId: 'admin-id',
+      today: TODAY,
+      catalog: CATALOG.slice(0, 5),
+    });
+    const lots = state.lots.length;
+
+    const result = await seedCatalog({ store, adminUserId: 'admin-id', today: TODAY });
+
+    expect(result.productsCreated).toBe(CATALOG.length - 5);
+    expect(state.products).toHaveLength(CATALOG.length);
+    expect(state.lots).toHaveLength(lots);
+  });
+
+  it('records the admin as the user of every demo movement', async () => {
+    const { state, store } = createMemoryStore();
+
+    await seedCatalog({ store, adminUserId: 'admin-id', today: TODAY });
+
+    expect(state.movements.every((m) => m.userId === 'admin-id')).toBe(true);
   });
 });

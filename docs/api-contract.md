@@ -171,6 +171,36 @@ El access token es un JWT `{ sub, role }` firmado con `JWT_ACCESS_SECRET` (durac
 
 `ProductDTO` incluye campos calculados: `availableQty`, `nearestExpiry`, `stockStatus` (`OK\|LOW\|OUT`), `avgDailyOut30d`, `coverageDays`, `wasteRisk` (`NONE\|LOW\|HIGH`).
 
+- `name` es único sin distinguir mayúsculas ni espacios al inicio o al final: un nombre repetido da 409 `DUPLICATE`. No hay borrado: se desactiva con `PATCH { status: "INACTIVE" }`.
+- `POST` y `PATCH` rechazan con 400 los campos desconocidos, incluidos los calculados: el cliente nunca los envía.
+- Campos calculados extra: `expiredQty` (stock en lotes ya vencidos) y `daysToNearestExpiry`.
+- `reasons[]` explica `stockStatus` y `wasteRisk` con códigos y parámetros.
+- `stockStatus` y `expiringWithinDays` se filtran después de calcular las métricas.
+
+**Reglas de cálculo** (en el calendario de `APP_TIMEZONE`; un lote vence al terminar su `expiryDate`):
+
+| Campo | Regla |
+|---|---|
+| `availableQty` | Suma de los lotes no vencidos |
+| `nearestExpiry` | `expiryDate` más próximo entre los lotes no vencidos con stock |
+| `stockStatus` | `OUT` si `availableQty = 0`; `LOW` si `< minStock`; si no, `OK` |
+| `avgDailyOut30d` | `EXIT_DISPATCH` de los últimos 30 días / 30 |
+| `coverageDays` | `availableQty / avgDailyOut30d`; `null` si el promedio es 0 |
+| `wasteRisk` | `HIGH` si hay stock no vencido y (promedio = 0 y el lote más próximo vence en ≤ `EXPIRY_WARNING_DAYS`, o `coverageDays` > días hasta ese vencimiento); `LOW` si vence en ≤ `EXPIRY_WARNING_DAYS`; si no, `NONE` |
+
+`EXPIRY_WARNING_DAYS = 7`.
+
+**Códigos de `reasons[]`** (`{ code, params }`)
+
+| `code` | `params` |
+|---|---|
+| `OUT_OF_STOCK` | `{ minStock }` |
+| `BELOW_MIN_STOCK` | `{ availableQty, minStock }` |
+| `EXPIRES_IN_DAYS` | `{ days }` |
+| `NO_RECENT_OUTFLOW` | `{ windowDays }` |
+| `COVERAGE_EXCEEDS_EXPIRY` | `{ coverageDays, daysToExpiry }` |
+| `EXPIRED_STOCK` | `{ quantity }` |
+
 ### 4.4 Inventario — [OBL]
 | Método | Ruta | Rol | Notas |
 |---|---|---|---|

@@ -7,6 +7,8 @@ import { createBcryptHasher } from '../src/modules/auth/password-hasher.js';
 import { createPrismaUserRepository } from '../src/modules/users/user.prisma-repository.js';
 import { createPrismaCatalogSeedStore } from '../src/seed/catalog-seed.prisma-store.js';
 import { seedCatalog } from '../src/seed/seed-catalog.js';
+import { createPrismaOrdersSeedStore } from '../src/seed/orders-seed.prisma-store.js';
+import { seedOrders } from '../src/seed/seed-orders.js';
 import { parseSeedConfig, SeedConfigError, seedUsers } from '../src/seed/seed-users.js';
 
 const DEFAULT_TIME_ZONE = 'America/Bogota';
@@ -36,7 +38,8 @@ async function main(): Promise<void> {
   const admin = await users.findByEmail(normalizeEmail(config.admin.email));
   if (!admin) throw new Error('The seeded admin user was not found');
 
-  const today = todayIn(timeZone, new Date());
+  const now = new Date();
+  const today = todayIn(timeZone, now);
   const result = await seedCatalog({
     store: createPrismaCatalogSeedStore(prisma),
     adminUserId: admin.id,
@@ -47,6 +50,19 @@ async function main(): Promise<void> {
       ? `Seeded catalog: ${result.productsCreated} products, ${result.lotsCreated} lots, ` +
           `${result.movementsCreated} movements (relative to ${today} in ${timeZone})\n`
       : `Catalog already present: ${result.productsCreated} missing products added, inventory untouched\n`,
+  );
+
+  const orders = await seedOrders({
+    store: createPrismaOrdersSeedStore(prisma),
+    adminUserId: admin.id,
+    today,
+    now,
+  });
+  process.stdout.write(
+    orders.ordersCreated > 0
+      ? `Seeded customers: ${orders.customersCreated}; orders: ${orders.ordersCreated} ` +
+          `with ${orders.itemsCreated} items (relative to ${today})\n`
+      : `Orders already present: ${orders.customersCreated} customers added, orders untouched\n`,
   );
 }
 

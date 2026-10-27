@@ -89,7 +89,11 @@ export function createInMemoryInventoryRepository(audit: AuditLogRepository) {
     lots: Map<string, LotRecord>;
     movements: MovementRecord[];
     addLot(
-      lot: Partial<LotRecord> & { productId: string; quantity: number; expiryDate: string },
+      lot: Partial<Omit<LotRecord, 'quantity' | 'expiryDate'>> & {
+        productId: string;
+        quantity: number;
+        expiryDate: string;
+      },
     ): LotRecord;
     addMovement(
       movement: Omit<MovementRecord, 'id' | 'productId' | 'quantity'> & { quantity: number },

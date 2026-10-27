@@ -210,6 +210,19 @@ El access token es un JWT `{ sub, role }` firmado con `JWT_ACCESS_SECRET` (durac
 | GET | `/inventory/movements` | A | filtros: `productId, type, from, to` |
 | GET | `/inventory/summary` | A, O | `{ totalProducts, lowStock, outOfStock, expiringSoon, wasteRiskHigh }` |
 
+- **Lotes** (`LotDTO`): `{ id, productId, lotCode, quantity, initialQuantity, expiryDate, receivedAt, daysToExpiry, expired }`. Solo se listan lotes con stock, ordenados por `expiryDate`. Por defecto se ocultan los vencidos (`includeExpired=true` los incluye) y `expiringWithinDays=N` limita a los que vencen hasta hoy + N.
+- **Entrada**: 201 `{ data: { lot, movement } }`.
+  - `quantity > 0` con hasta 3 decimales.
+  - `expiryDate` no puede estar en el pasado.
+  - Un producto inexistente da 404 y uno inactivo, 400.
+  - Lote, movimiento `ENTRY` y auditoría se escriben en una sola transacción.
+- **Salida**: 201 `{ data: { allocations: [{ lotId, qty }], movements } }`. `reason` es obligatorio.
+  - **Con `lotId`**: usa ese lote. Si el lote no pertenece al producto, 404.
+  - **Sin `lotId`**: aplica FEFO (ordena por vencimiento, después por recepción). Ignora los lotes vencidos salvo en `EXIT_WASTE`, que los consume primero.
+  - Cada lote se descuenta con una actualización condicional (`quantity >= qty`) dentro de una transacción. Si el stock no alcanza, o si otra salida simultánea lo consumió, responde 409 `INSUFFICIENT_STOCK` y no queda ningún movimiento parcial.
+- **Resumen**: cuenta solo productos `ACTIVE`. `lowStock` excluye los `OUT`. `expiringSoon` = productos cuyo lote más próximo vence en ≤ `EXPIRY_WARNING_DAYS`.
+- Cantidades: `Decimal(12,3)` en BD, `number` en JSON. `InventoryMovement.quantity` siempre es positiva; el `type` da la dirección. `orderId` todavía no tiene FK (se agrega con `Order`).
+
 ### 4.5 Clientes — [OBL]
 | Método | Ruta | Rol |
 |---|---|---|

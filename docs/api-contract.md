@@ -297,6 +297,7 @@ El cliente solo envía IDs. El backend arma el contexto filtrado por rol. Si fal
 | backend | `DATABASE_URL`, `DIRECT_URL` | Neon (pooled / directa para migraciones) |
 | backend | `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL_DAYS` | Autenticación (refresh opaco: no necesita secreto) |
 | backend | `LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_MINUTES` | Límite de intentos de login por email + IP |
+| backend | `APP_TIMEZONE` | Zona IANA del calendario de negocio (por defecto `America/Bogota`): "hoy", días hasta el vencimiento y vencidos se calculan en esta zona |
 | backend | `SHEET_LINK_SECRET` | Enlaces firmados [EXTRA] |
 | backend | `CORS_ORIGINS` | Lista separada por comas |
 | backend | `AI_SERVICE_URL`, `AI_INTERNAL_KEY`, `AI_TIMEOUT_MS` | Llamadas a la IA |

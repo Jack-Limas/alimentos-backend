@@ -208,3 +208,18 @@ enum OrderPriority {
   HIGH
   URGENT
 }
+
+model Customer {
+  id        String         @id @default(uuid()) @db.Uuid
+  name      String
+  type      CustomerType
+  address   String
+  phone     String?
+  email     String?
+  status    CustomerStatus @default(ACTIVE)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([status, type])
+  @@map("customers")
+}

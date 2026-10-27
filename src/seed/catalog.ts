@@ -71,12 +71,12 @@ export const CATALOG: readonly CatalogItem[] = [
   item('Pechuga de pollo', 'MEAT_POULTRY', 'KG', 40, 5, 12, 'EXPIRING'),
   item('Pollo entero', 'MEAT_POULTRY', 'KG', 50, 5, 15, 'LOW'),
   item('Carne de res molida', 'MEAT_POULTRY', 'KG', 30, 4, 8, 'EXPIRED'),
-  item('Costilla de cerdo', 'MEAT_POULTRY', 'KG', 20, 6, 3),
+  item('Costilla de cerdo', 'MEAT_POULTRY', 'KG', 12, 10, 3),
   item('Salchichas', 'MEAT_POULTRY', 'KG', 15, 30, 2),
 
   // Pescado
   item('Tilapia fresca', 'FISH', 'KG', 20, 4, 4, 'OUT'),
-  item('Bagre fresco', 'FISH', 'KG', 15, 4, 2.5),
+  item('Bagre fresco', 'FISH', 'KG', 15, 4, 2.5, 'EXPIRING'),
 
   // Frutas y verduras
   item('Papa pastusa', 'FRUITS_VEGETABLES', 'KG', 300, 30, 60),

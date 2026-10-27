@@ -221,7 +221,7 @@ El access token es un JWT `{ sub, role }` firmado con `JWT_ACCESS_SECRET` (durac
   - **Sin `lotId`**: aplica FEFO (ordena por vencimiento, después por recepción). Ignora los lotes vencidos salvo en `EXIT_WASTE`, que los consume primero.
   - Cada lote se descuenta con una actualización condicional (`quantity >= qty`) dentro de una transacción. Si el stock no alcanza, o si otra salida simultánea lo consumió, responde 409 `INSUFFICIENT_STOCK` y no queda ningún movimiento parcial.
 - **Resumen**: cuenta solo productos `ACTIVE`. `lowStock` excluye los `OUT`. `expiringSoon` = productos cuyo lote más próximo vence en ≤ `EXPIRY_WARNING_DAYS`.
-- Cantidades: `Decimal(12,3)` en BD, `number` en JSON. `InventoryMovement.quantity` siempre es positiva; el `type` da la dirección. `orderId` todavía no tiene FK (se agrega con `Order`).
+- Cantidades: `Decimal(12,3)` en BD, `number` en JSON. `InventoryMovement.quantity` siempre es positiva; el `type` da la dirección. `orderId` es FK opcional a `Order` (solo `EXIT_DISPATCH` y `RETURN` de un pedido).
 
 ### 4.5 Clientes — [OBL]
 | Método | Ruta | Rol |
@@ -230,6 +230,11 @@ El access token es un JWT `{ sub, role }` firmado con `JWT_ACCESS_SECRET` (durac
 | GET | `/customers/:id` | A |
 | POST | `/customers` | A |
 | PATCH | `/customers/:id` | A (incluye `status`) |
+
+- `CustomerDTO`: `{ id, name, type, address, phone, email, status, createdAt, updatedAt }`. `phone` y `email` son opcionales; en PATCH, `null` los borra. El email se guarda en minúsculas.
+- Filtros de `GET /customers`: `search` (nombre, sin distinguir mayúsculas), `type`, `status` y paginación. Orden por nombre.
+- Sin borrado físico: se desactiva con `PATCH { "status": "INACTIVE" }`. Un cliente inactivo no puede recibir pedidos nuevos.
+- La auditoría guarda los nombres de los campos cambiados, nunca el teléfono ni el email.
 
 ### 4.6 Pedidos — [OBL]
 | Método | Ruta | Rol | Notas |

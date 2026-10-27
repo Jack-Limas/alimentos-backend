@@ -26,6 +26,18 @@ Conventions for anyone (human or AI assistant) working in this repository.
   quantities, alerts); the server always recomputes them.
 - Relative imports use the `.js` extension (ESM output).
 
+## Inventory rules
+
+- Business logic that can be pure lives in `src/modules/<name>/domain/` (no Prisma, no clock) and
+  is fully unit tested. Services pass "today" in.
+- "Today" and days to expiry come from `todayIn(APP_TIMEZONE, clock())` and the calendar helpers,
+  never from `new Date().toISOString()` (that is the UTC date).
+- Quantities are `Decimal(12,3)` in the DB and numbers in JSON; do arithmetic with the milli-unit
+  helpers (`toMilli`, `sumQty`), never by adding floats.
+- Stock changes are movements with a positive quantity. Writes that change stock run in one
+  transaction together with their audit row; decrements are conditional (`quantity >= qty`).
+- Thresholds live in `INVENTORY_RULES`; do not hardcode 7 or 30 elsewhere.
+
 ## Errors
 
 - Response format: `{ "error": { "code": "STRING", "message": "text", "details": {} } }`.

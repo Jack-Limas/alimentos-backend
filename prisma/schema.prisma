@@ -173,3 +173,38 @@ model InventoryMovement {
   @@index([type, createdAt])
   @@map("inventory_movements")
 }
+
+// ---------------------------------------------------------------------------
+// Customers and orders (contract, sections 2, 4.5 and 4.6)
+// ---------------------------------------------------------------------------
+
+enum CustomerType {
+  SUPERMARKET
+  RESTAURANT
+  SCHOOL
+  HOSPITAL
+  FOOD_BANK
+}
+
+/// No physical delete: customers are deactivated.
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum OrderStatus {
+  PENDING
+  IN_PREPARATION
+  READY_FOR_DISPATCH
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+/// Declared from lowest to highest, so ORDER BY priority DESC puts URGENT first.
+enum OrderPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}

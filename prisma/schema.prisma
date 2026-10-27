@@ -166,8 +166,9 @@ model InventoryMovement {
   type      MovementType
   quantity  Decimal      @db.Decimal(12, 3)
   reason    String?
-  /// Order that caused an EXIT_DISPATCH or RETURN. No foreign key until Order exists.
+  /// Order that caused an EXIT_DISPATCH or RETURN; null for every other movement.
   orderId   String?      @db.Uuid
+  order     Order?       @relation(fields: [orderId], references: [id], onDelete: Restrict)
   userId    String       @db.Uuid
   user      User         @relation(fields: [userId], references: [id], onDelete: Restrict)
   createdAt DateTime     @default(now())
@@ -245,8 +246,9 @@ model Order {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  items   OrderItem[]
-  history OrderStatusHistory[]
+  items     OrderItem[]
+  history   OrderStatusHistory[]
+  movements InventoryMovement[]
 
   @@index([status, dueDate])
   @@index([customerId])

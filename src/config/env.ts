@@ -3,6 +3,16 @@ import { z } from 'zod';
 
 const optionalString = z.string().trim().min(1).optional();
 
+/** True when Intl knows the IANA time zone (e.g. America/Bogota). */
+export function isValidTimeZone(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const corsOrigins = z
   .string()
   .trim()
@@ -33,6 +43,13 @@ export const envSchema = z.object({
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(7),
   LOGIN_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(100).default(5),
   LOGIN_WINDOW_MINUTES: z.coerce.number().int().min(1).max(1440).default(15),
+
+  // Business calendar: "today" and days to expiry are computed in this IANA time zone.
+  APP_TIMEZONE: z
+    .string()
+    .trim()
+    .refine(isValidTimeZone, 'must be an IANA time zone such as America/Bogota')
+    .default('America/Bogota'),
 
   // Signed dispatch sheet links [EXTRA]
   SHEET_LINK_SECRET: optionalString,

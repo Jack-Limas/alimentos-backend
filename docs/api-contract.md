@@ -153,7 +153,7 @@ Roles: **A** = ADMIN, **O** = OPERATOR, **P** = público.
 |---|---|---|---|
 | POST | `/auth/login` | P | `{ email, password }` → `{ accessToken, user }` + `Set-Cookie: refresh_token` (HttpOnly, Secure, SameSite=None, Path=/api/v1/auth). 429 tras N intentos fallidos por email+IP |
 | POST | `/auth/refresh` | P (cookie) | → `{ accessToken }` + cookie rotada. Reuso de un refresh revocado → se revoca toda la familia |
-| POST | `/auth/logout` | A, O | revoca la familia y borra la cookie |
+| POST | `/auth/logout` | cookie (sin Bearer) | revoca la familia del refresh de la cookie y la borra; responde 204 aunque no haya cookie |
 | GET | `/auth/me` | A, O | `{ id, email, name, role }` |
 
 El access token va en `Authorization: Bearer`; vive en memoria con copia en sessionStorage.

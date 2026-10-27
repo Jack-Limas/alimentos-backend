@@ -74,6 +74,15 @@ Capas del backend: `route → controller → service → repository (Prisma)`.
 | POST   | `/api/v1/inventory/exits`     | Solo `ADMIN`; `EXIT_WASTE` o `ADJUSTMENT`, con `lotId` o FEFO; 409 si no alcanza                         |
 | GET    | `/api/v1/inventory/movements` | Solo `ADMIN`; filtros `productId`, `type`, `from`, `to`                                                  |
 | GET    | `/api/v1/inventory/summary`   | `{ data: { totalProducts, lowStock, outOfStock, expiringSoon, wasteRiskHigh } }`                         |
+| GET    | `/api/v1/customers`           | Solo `ADMIN`; lista paginada; filtros `search`, `type`, `status`                                         |
+| GET    | `/api/v1/customers/:id`       | Solo `ADMIN`; `{ data }`                                                                                 |
+| POST   | `/api/v1/customers`           | Solo `ADMIN`; 201                                                                                        |
+| PATCH  | `/api/v1/customers/:id`       | Solo `ADMIN`; incluye `status` (no hay borrado físico)                                                   |
+| GET    | `/api/v1/orders`              | Lista paginada; filtros `status` (varios), `priority`, `customerId`, `dueBefore`                         |
+| GET    | `/api/v1/orders/:id`          | `{ data }` con `items[]`, cliente e `history[]`                                                          |
+| POST   | `/api/v1/orders`              | Solo `ADMIN`; 201; pedido + ítems + historial + auditoría en una transacción; no reserva stock           |
+| PATCH  | `/api/v1/orders/:id/status`   | Máquina de estados; cancelar solo `ADMIN` (con `RETURN` a los lotes); 409 si no aplica                   |
+| GET    | `/api/v1/alerts`              | `{ data: Alert[] }` calculadas al vuelo, de la más grave a la menos grave                                |
 
 Todas las respuestas incluyen `Server-Timing: app;dur=<ms>`. Los errores siguen el formato
 `{ "error": { "code", "message", "details" } }`.

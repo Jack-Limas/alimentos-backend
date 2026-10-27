@@ -302,6 +302,18 @@ Se calculan al vuelo, no se guardan. Cada alerta: `{ type, severity: INFO|WARNIN
 | `SHORTAGE_RISK` | demanda pendiente del producto > `availableQty` |
 | `ORDER_DUE_SOON` | pedido no despachado con `dueDate` en ≤ 2 días |
 
+Respuesta: `{ "data": Alert[] }`, ordenadas por severidad (CRITICAL primero), después por tipo y `entityId`. Solo productos `ACTIVE`. Fechas en `APP_TIMEZONE`.
+
+| `type` | `severity` | `code` | `params` |
+|---|---|---|---|
+| `LOW_STOCK` | WARNING; CRITICAL si `OUT` | `BELOW_MIN_STOCK` / `OUT_OF_STOCK` | `{ name, availableQty, minStock }` / `{ name, minStock }` |
+| `EXPIRING_SOON` | WARNING; CRITICAL si vence en ≤ 2 días | `EXPIRES_IN_DAYS` | `{ name, days, expiryDate }` (lote más próximo) |
+| `WASTE_RISK` | CRITICAL (solo `wasteRisk = HIGH`) | `COVERAGE_EXCEEDS_EXPIRY` / `NO_RECENT_OUTFLOW` | los de la razón (4.3) + `name` |
+| `SHORTAGE_RISK` | WARNING | `PENDING_DEMAND_EXCEEDS_STOCK` | `{ name, demand, available }` (`demand` = suma de `requestedQty` en pedidos `PENDING`) |
+| `ORDER_DUE_SOON` | WARNING; CRITICAL si ya venció | `ORDER_DUE_IN_DAYS` / `ORDER_OVERDUE` | `{ orderCode, days }` / `{ orderCode, daysOverdue }` |
+
+"No despachado" = `PENDING`, `IN_PREPARATION` o `READY_FOR_DISPATCH`. Umbrales en `ALERT_RULES` (`CRITICAL_EXPIRY_DAYS = 2`, `ORDER_DUE_SOON_DAYS = 2`) sobre `INVENTORY_RULES`. Las métricas salen de `productMetrics`, así que alertas y `ProductDTO` nunca se contradicen.
+
 ### 4.9 IA (proxy del backend)
 | Método | Ruta | Rol | Etiqueta |
 |---|---|---|---|

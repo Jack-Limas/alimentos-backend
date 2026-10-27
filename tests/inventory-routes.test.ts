@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { LotDto, MovementDto } from '../src/modules/inventory/inventory.dto.js';
-import type { ExitResult } from '../src/modules/inventory/inventory.service.js';
+import type { ExitResult, InventorySummary } from '../src/modules/inventory/inventory.service.js';
 import { dec } from './helpers/in-memory-inventory.js';
 import {
   addProduct,
@@ -326,5 +326,104 @@ describe('POST /api/v1/inventory/exits', () => {
     expect(dispatch.statusCode).toBe(400);
     expect(noReason.statusCode).toBe(400);
     expect(qtyOf(otherLot.id)).toBe(5);
+  });
+});
+
+describe('GET /api/v1/inventory/lots', () => {
+  it('hides expired lots by default and orders by expiry', async () => {
+    const { soon, later } = milkWithLots();
+
+    const res = await call(ctx.app, ctx.operatorToken, 'GET', '/api/v1/inventory/lots');
+
+    const body = res.json<{ data: LotDto[]; meta: { total: number } }>();
+    expect(body.data.map((lot) => lot.id)).toEqual([soon.id, later.id]);
+    expect(body.data[0]).toMatchObject({ daysToExpiry: 3, expired: false, quantity: 10 });
+  });
+
+  it('includes expired lots on request and filters by expiringWithinDays and product', async () => {
+    const { product, expired, soon } = milkWithLots();
+    addProduct(ctx, { name: 'Otro' });
+
+    const all = await call(
+      ctx.app,
+      ctx.adminToken,
+      'GET',
+      '/api/v1/inventory/lots?includeExpired=true',
+    );
+    const soonOnly = await call(
+      ctx.app,
+      ctx.adminToken,
+      'GET',
+      `/api/v1/inventory/lots?expiringWithinDays=7&productId=${product.id}`,
+    );
+
+    expect(all.json<{ data: LotDto[] }>().data[0]).toMatchObject({ id: expired.id, expired: true });
+    expect(all.json<{ meta: { total: number } }>().meta.total).toBe(3);
+    expect(soonOnly.json<{ data: LotDto[] }>().data.map((lot) => lot.id)).toEqual([soon.id]);
+  });
+
+  it('rejects an invalid includeExpired value', async () => {
+    const res = await call(
+      ctx.app,
+      ctx.adminToken,
+      'GET',
+      '/api/v1/inventory/lots?includeExpired=yes',
+    );
+
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('GET /api/v1/inventory/movements', () => {
+  it('lists movements newest first, filtered by type and product', async () => {
+    const { product } = milkWithLots();
+    await call(ctx.app, ctx.adminToken, 'POST', '/api/v1/inventory/entries', {
+      productId: product.id,
+      quantity: 3,
+      expiryDate: '2026-12-01',
+    });
+    await call(ctx.app, ctx.adminToken, 'POST', '/api/v1/inventory/exits', {
+      productId: product.id,
+      quantity: 1,
+      type: 'EXIT_WASTE',
+      reason: 'Roto',
+    });
+
+    const all = await call(ctx.app, ctx.adminToken, 'GET', '/api/v1/inventory/movements');
+    const entries = await call(
+      ctx.app,
+      ctx.adminToken,
+      'GET',
+      `/api/v1/inventory/movements?type=ENTRY&productId=${product.id}`,
+    );
+
+    expect(all.json<{ meta: { total: number } }>().meta.total).toBe(2);
+    const entryList = entries.json<{ data: MovementDto[] }>().data;
+    expect(entryList).toHaveLength(1);
+    expect(entryList[0]).toMatchObject({ type: 'ENTRY', quantity: 3, productId: product.id });
+  });
+});
+
+describe('GET /api/v1/inventory/summary', () => {
+  it('counts active products by stock status, expiry and waste risk', async () => {
+    milkWithLots(); // 40 L available, expires in 3 days, no outflow → HIGH waste risk
+    const rice = addProduct(ctx, { name: 'Arroz blanco', minStock: 50 });
+    ctx.repositories.inventory.addLot({
+      productId: rice.id,
+      quantity: 20,
+      expiryDate: '2027-06-01',
+    });
+    addProduct(ctx, { name: 'Fríjol rojo', minStock: 5 }); // no stock
+    addProduct(ctx, { name: 'Producto inactivo', status: 'INACTIVE' });
+
+    const res = await call(ctx.app, ctx.adminToken, 'GET', '/api/v1/inventory/summary');
+
+    expect(res.json<{ data: InventorySummary }>().data).toEqual({
+      totalProducts: 3,
+      lowStock: 1,
+      outOfStock: 1,
+      expiringSoon: 1,
+      wasteRiskHigh: 1,
+    });
   });
 });

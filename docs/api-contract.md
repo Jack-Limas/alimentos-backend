@@ -244,6 +244,20 @@ El access token es un JWT `{ sub, role }` firmado con `JWT_ACCESS_SECRET` (durac
 | POST | `/orders` | A | `{ customerId, priority, dueDate, items: [{ productId, quantity }] }` |
 | PATCH | `/orders/:id/status` | A, O | `{ status, note? }`; valida la máquina de estados; `CANCELLED` solo A |
 
+- `OrderDTO`: `{ id, code, number, customer: { id, name, type }, status, priority, dueDate, notes, itemCount, createdById, createdAt, updatedAt }`. `code` (`PED-000123`) se deriva del `number` secuencial. El detalle agrega `items[]` (`{ id, productId, productName, unit, requestedQty, allocatedQty }`) e `history[]` (`{ id, fromStatus, toStatus, userId, note, createdAt }`).
+- **Listado**: `status` admite varios (`?status=PENDING,IN_PREPARATION` o repetido), `priority`, `customerId` y `dueBefore` (estrictamente antes de esa fecha). Orden: `dueDate` asc, después `priority` (URGENT primero) y `number`.
+- **Creación** (201 con el detalle):
+  - Cliente inexistente 404; inactivo 400. Productos inexistentes 404 (`details.productIds`); inactivos 400.
+  - Sin productos repetidos, 1–50 ítems, cantidades > 0 con hasta 3 decimales.
+  - `dueDate` ≥ hoy en `APP_TIMEZONE`.
+  - No reserva stock. Pedido, ítems, historial (`null → PENDING`) y auditoría van en una transacción.
+- **Cambio de estado**:
+  - Por PATCH se permiten `IN_PREPARATION → READY_FOR_DISPATCH → SHIPPED → DELIVERED` (A, O) y `→ CANCELLED` desde `PENDING`, `IN_PREPARATION` y `READY_FOR_DISPATCH` (solo A).
+  - `PENDING → IN_PREPARATION` no se hace por PATCH: lo hace la confirmación de la propuesta de distribución (4.7). Responde 409 `INVALID_STATUS_TRANSITION` con `details.reason = REQUIRES_PROPOSAL`.
+  - Una transición que no existe (incluido quedarse en el mismo estado) da 409 con `reason = NOT_ALLOWED`. Se revisa antes que el rol: un OPERATOR que cancela un pedido `SHIPPED` recibe 409, no 403. Un OPERATOR que cancela un pedido cancelable recibe 403 `FORBIDDEN`.
+  - El estado se actualiza solo si sigue siendo el leído (`WHERE id AND status`). Si otro usuario lo cambió antes, 409 con `reason = STATUS_CHANGED` y no se escribe nada.
+  - **Cancelar** devuelve a cada lote lo que el pedido despachó de él (`EXIT_DISPATCH` menos `RETURN` previos) con movimientos `RETURN` y deja `allocatedQty` en 0, todo en la misma transacción que el historial y la auditoría.
+
 ### 4.7 Distribución — [OBL]
 | Método | Ruta | Rol | Notas |
 |---|---|---|---|

@@ -28,6 +28,21 @@ import {
   healthRoutes,
   type DatabaseCheck,
 } from './modules/health/index.js';
+import {
+  createInventoryController,
+  createInventoryMetricsService,
+  createInventoryService,
+  createPrismaInventoryRepository,
+  inventoryRoutes,
+  type InventoryRepository,
+} from './modules/inventory/index.js';
+import {
+  createPrismaProductRepository,
+  createProductController,
+  createProductService,
+  productRoutes,
+  type ProductRepository,
+} from './modules/products/index.js';
 import { createPrismaUserRepository, type UserRepository } from './modules/users/index.js';
 import auth from './plugins/auth.js';
 import errorHandler from './plugins/error-handler.js';
@@ -42,6 +57,8 @@ export interface AppRepositories {
   refreshTokens: RefreshTokenRepository;
   loginAttempts: LoginAttemptRepository;
   auditLogs: AuditLogRepository;
+  products: ProductRepository;
+  inventory: InventoryRepository;
 }
 
 export interface AppDeps {
@@ -54,6 +71,7 @@ export interface AppDeps {
     | 'REFRESH_TOKEN_TTL_DAYS'
     | 'LOGIN_MAX_ATTEMPTS'
     | 'LOGIN_WINDOW_MINUTES'
+    | 'APP_TIMEZONE'
   >;
   /** Defaults to a real `SELECT 1` through Prisma. Tests inject a fake. */
   checkDatabase?: DatabaseCheck;
@@ -87,6 +105,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       refreshTokens: createPrismaRefreshTokenRepository(prisma),
       loginAttempts: createPrismaLoginAttemptRepository(prisma),
       auditLogs: createPrismaAuditLogRepository(prisma),
+      products: createPrismaProductRepository(prisma),
+      inventory: createPrismaInventoryRepository(prisma),
     };
     app.addHook('onClose', async () => {
       await prisma.$disconnect();
@@ -114,6 +134,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     }),
   );
 
+  const clock = deps.clock ?? systemClock;
   const auditService = createAuditService(repositories.auditLogs);
   const authService = createAuthService({
     users: repositories.users,
@@ -122,12 +143,28 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     audit: auditService,
     hasher: deps.passwordHasher ?? createBcryptHasher(),
     signAccessToken: (payload) => app.jwt.sign(payload),
-    clock: deps.clock ?? systemClock,
+    clock,
     config: {
       refreshTokenTtlDays: env.REFRESH_TOKEN_TTL_DAYS,
       loginMaxAttempts: env.LOGIN_MAX_ATTEMPTS,
       loginWindowMinutes: env.LOGIN_WINDOW_MINUTES,
     },
+  });
+
+  const inventoryMetrics = createInventoryMetricsService({
+    inventory: repositories.inventory,
+    clock,
+    timeZone: env.APP_TIMEZONE,
+  });
+  const productService = createProductService({
+    products: repositories.products,
+    inventory: repositories.inventory,
+    metrics: inventoryMetrics,
+  });
+  const inventoryService = createInventoryService({
+    products: repositories.products,
+    inventory: repositories.inventory,
+    metrics: inventoryMetrics,
   });
 
   // Root /health for the Render health check; full module under /api/v1.
@@ -144,6 +181,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(auditRoutes, {
     prefix: API_PREFIX,
     controller: createAuditController(auditService),
+  });
+  await app.register(productRoutes, {
+    prefix: `${API_PREFIX}/products`,
+    controller: createProductController(productService),
+  });
+  await app.register(inventoryRoutes, {
+    prefix: `${API_PREFIX}/inventory`,
+    controller: createInventoryController(inventoryService),
   });
 
   return app;

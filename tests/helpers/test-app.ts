@@ -7,6 +7,10 @@ import {
   createInMemoryRefreshTokenRepository,
   createInMemoryUserRepository,
 } from './in-memory-repositories.js';
+import {
+  createInMemoryInventoryRepository,
+  createInMemoryProductRepository,
+} from './in-memory-inventory.js';
 
 export const ALLOWED_ORIGIN = 'http://localhost:3000';
 export const TEST_JWT_SECRET = 'test-jwt-access-secret-0123456789abcdef0123';
@@ -18,11 +22,15 @@ export const dbDown = (): Promise<void> => Promise.reject(new Error('connection 
 export const testHasher = createBcryptHasher(4);
 
 export function createTestRepositories() {
+  const auditLogs = createInMemoryAuditLogRepository();
   return {
     users: createInMemoryUserRepository(),
     refreshTokens: createInMemoryRefreshTokenRepository(),
     loginAttempts: createInMemoryLoginAttemptRepository(),
-    auditLogs: createInMemoryAuditLogRepository(),
+    auditLogs,
+    // Both write their audit rows into the same in-memory audit log.
+    products: createInMemoryProductRepository(auditLogs),
+    inventory: createInMemoryInventoryRepository(auditLogs),
   } satisfies AppRepositories;
 }
 
@@ -48,6 +56,7 @@ export function buildTestApp(overrides: TestAppOverrides = {}): Promise<FastifyI
       REFRESH_TOKEN_TTL_DAYS: 7,
       LOGIN_MAX_ATTEMPTS: 5,
       LOGIN_WINDOW_MINUTES: 15,
+      APP_TIMEZONE: 'America/Bogota',
       ...env,
     },
   });

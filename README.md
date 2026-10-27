@@ -258,6 +258,18 @@ etc. Cada uno tiene categoría, unidad y stock mínimo coherentes.
 - Los movimientos demo quedan a nombre del admin del seed.
 - `SEED_SIZE=large` (seed grande) llega en una fase posterior.
 
+### Clientes y pedidos demo (seed)
+
+- **15 clientes ficticios de Bogotá** de todos los tipos (supermercados, restaurantes, colegios,
+  hospitales y dos bancos de alimentos); uno está `INACTIVE`. Solo si la tabla `customers` está vacía.
+  Los emails usan el dominio reservado `example.com`.
+- **Solo si la tabla `orders` está vacía**, crea en una transacción 35 pedidos `PENDING` y 2
+  `CANCELLED` (sin movimientos), con 1 a 5 ítems e historial. Las fechas de entrega son relativas a
+  hoy: 3 vencidos, 8 para hoy o mañana y el resto a 3–14 días.
+- Los productos con stock bajo o agotados se piden por encima de lo disponible (`SHORTAGE_RISK` en
+  al menos 3 productos) y los próximos a vencer también aparecen en pedidos.
+- Correrlo otra vez no duplica ni cambia nada.
+
 ## Inventario
 
 Cada producto tiene **lotes** (`InventoryLot`) con su fecha de vencimiento, y cada cambio de stock
@@ -300,6 +312,20 @@ Como defensa extra, la migración agrega `CHECK (quantity >= 0)` en los lotes.
 
 Los dos resultados se combinan en un `Map<productId, …>`. Los filtros `stockStatus` y
 `expiringWithinDays` dependen de esas métricas, así que se aplican después de calcularlas.
+
+## Pedidos y alertas
+
+- **Máquina de estados pura** (`src/modules/orders/domain/order-state-machine.ts`): la tabla de
+  transiciones del contrato y `checkManualTransition(from, to, role)`. `PENDING → IN_PREPARATION`
+  queda reservado a la confirmación de la propuesta de distribución.
+- **Cambio de estado sin carreras**: `UPDATE ... WHERE id = ? AND status = <estado leído>`. Si
+  otro usuario lo cambió antes, responde 409 y la transacción no escribe nada.
+- **Cancelación**: `returnsForCancellation` calcula por lote lo despachado menos lo ya devuelto; la
+  misma transacción suma esa cantidad a cada lote, escribe los `RETURN`, pone `allocatedQty` en 0 y
+  registra historial y auditoría.
+- **Alertas** (`src/modules/alerts/domain/alerts.ts`): `buildAlerts` es puro y reutiliza
+  `productMetrics` e `INVENTORY_RULES`. El servicio hace cuatro consultas agregadas (stock por
+  vencimiento, salidas, demanda pendiente con `groupBy` y pedidos próximos) y las une con un `Map`.
 
 ## CI
 

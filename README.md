@@ -55,16 +55,25 @@ Capas del backend: `route → controller → service → repository (Prisma)`.
 
 ## Endpoints disponibles
 
-| Método | Ruta                   | Respuesta                                                               |
-| ------ | ---------------------- | ----------------------------------------------------------------------- |
-| GET    | `/health`              | `{ status: "ok", service, version, uptimeSec }` (sin BD; Render)        |
-| GET    | `/api/v1/health`       | Igual que `/health`                                                     |
-| GET    | `/api/v1/health/ready` | `{ status: "ok", db: "up" }` o 503 `{ status: "degraded", db: "down" }` |
-| POST   | `/api/v1/auth/login`   | `{ accessToken, user }` + cookie `refresh_token`                        |
-| POST   | `/api/v1/auth/refresh` | `{ accessToken }` + cookie rotada                                       |
-| POST   | `/api/v1/auth/logout`  | 204 y cookie borrada                                                    |
-| GET    | `/api/v1/auth/me`      | `{ data: { id, email, name, role } }` (Bearer)                          |
-| GET    | `/api/v1/audit-logs`   | Lista paginada; solo `ADMIN`; filtros `action`, `userId`, `from`, `to`  |
+| Método | Ruta                          | Respuesta                                                                                                |
+| ------ | ----------------------------- | -------------------------------------------------------------------------------------------------------- |
+| GET    | `/health`                     | `{ status: "ok", service, version, uptimeSec }` (sin BD; Render)                                         |
+| GET    | `/api/v1/health`              | Igual que `/health`                                                                                      |
+| GET    | `/api/v1/health/ready`        | `{ status: "ok", db: "up" }` o 503 `{ status: "degraded", db: "down" }`                                  |
+| POST   | `/api/v1/auth/login`          | `{ accessToken, user }` + cookie `refresh_token`                                                         |
+| POST   | `/api/v1/auth/refresh`        | `{ accessToken }` + cookie rotada                                                                        |
+| POST   | `/api/v1/auth/logout`         | 204 y cookie borrada                                                                                     |
+| GET    | `/api/v1/auth/me`             | `{ data: { id, email, name, role } }` (Bearer)                                                           |
+| GET    | `/api/v1/audit-logs`          | Lista paginada; solo `ADMIN`; filtros `action`, `userId`, `from`, `to`                                   |
+| GET    | `/api/v1/products`            | Lista paginada con métricas; filtros `search`, `category`, `status`, `stockStatus`, `expiringWithinDays` |
+| GET    | `/api/v1/products/:id`        | `{ data }` con métricas y `lots[]` en orden FEFO                                                         |
+| POST   | `/api/v1/products`            | Solo `ADMIN`; 201; nombre repetido → 409 `DUPLICATE`                                                     |
+| PATCH  | `/api/v1/products/:id`        | Solo `ADMIN`; campos editables y `status` (no hay borrado físico)                                        |
+| GET    | `/api/v1/inventory/lots`      | Lotes con stock; filtros `productId`, `expiringWithinDays`, `includeExpired`                             |
+| POST   | `/api/v1/inventory/entries`   | Solo `ADMIN`; lote + movimiento `ENTRY` + auditoría (una transacción)                                    |
+| POST   | `/api/v1/inventory/exits`     | Solo `ADMIN`; `EXIT_WASTE` o `ADJUSTMENT`, con `lotId` o FEFO; 409 si no alcanza                         |
+| GET    | `/api/v1/inventory/movements` | Solo `ADMIN`; filtros `productId`, `type`, `from`, `to`                                                  |
+| GET    | `/api/v1/inventory/summary`   | `{ data: { totalProducts, lowStock, outOfStock, expiringSoon, wasteRiskHigh } }`                         |
 
 Todas las respuestas incluyen `Server-Timing: app;dur=<ms>`. Los errores siguen el formato
 `{ "error": { "code", "message", "details" } }`.
@@ -102,6 +111,7 @@ Plantilla en [.env.example](.env.example). Nunca se commitean valores reales.
 | `REFRESH_TOKEN_TTL_DAYS` | No          | Días de vida del refresh token (7 por defecto)           |
 | `LOGIN_MAX_ATTEMPTS`     | No          | Intentos fallidos por email + IP (5 por defecto)         |
 | `LOGIN_WINDOW_MINUTES`   | No          | Ventana del límite de intentos (15 por defecto)          |
+| `APP_TIMEZONE`           | No          | Zona del calendario de negocio (`America/Bogota`)        |
 | `SHEET_LINK_SECRET`      | [EXTRA]     | Enlaces firmados de hoja de despacho                     |
 | `AI_SERVICE_URL`         | Fase IA     | URL de `alimentos-ai`                                    |
 | `AI_INTERNAL_KEY`        | Fase IA     | Clave enviada en `X-Internal-Key`                        |

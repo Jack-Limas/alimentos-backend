@@ -5,7 +5,12 @@ import {
   type Paginated,
   type PaginationQuery,
 } from '../../shared/http/pagination.js';
-import type { AuditLogFilter, AuditLogRecord, AuditLogRepository } from './audit-log.repository.js';
+import type {
+  AuditLogFilter,
+  AuditLogRecord,
+  AuditLogRepository,
+  NewAuditLog,
+} from './audit-log.repository.js';
 
 export interface AuditEntryInput {
   userId?: string | null | undefined;
@@ -52,6 +57,21 @@ export function sanitizeMetadata(value: unknown): unknown {
   return value;
 }
 
+/**
+ * Normalizes an entry and strips credentials from its metadata. Repositories
+ * that must write the audit row in their own transaction receive this.
+ */
+export function buildAuditEntry(entry: AuditEntryInput): NewAuditLog {
+  return {
+    userId: entry.userId ?? null,
+    action: entry.action,
+    entity: entry.entity,
+    entityId: entry.entityId ?? null,
+    metadata: entry.metadata ? (sanitizeMetadata(entry.metadata) as Prisma.InputJsonValue) : null,
+    ip: entry.ip ?? null,
+  };
+}
+
 function toDto(record: AuditLogRecord): AuditLogDto {
   return { ...record, createdAt: record.createdAt.toISOString() };
 }
@@ -59,16 +79,7 @@ function toDto(record: AuditLogRecord): AuditLogDto {
 export function createAuditService(repository: AuditLogRepository): AuditService {
   return {
     async record(entry) {
-      await repository.create({
-        userId: entry.userId ?? null,
-        action: entry.action,
-        entity: entry.entity,
-        entityId: entry.entityId ?? null,
-        metadata: entry.metadata
-          ? (sanitizeMetadata(entry.metadata) as Prisma.InputJsonValue)
-          : null,
-        ip: entry.ip ?? null,
-      });
+      await repository.create(buildAuditEntry(entry));
     },
 
     async list(filter, page) {

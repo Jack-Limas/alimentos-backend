@@ -1,17 +1,53 @@
 import dotenv from 'dotenv';
+import { isValidTimeZone } from '../src/config/env.js';
 import { prisma } from '../src/lib/prisma.js';
+import { normalizeEmail } from '../src/modules/auth/auth.service.js';
+import { todayIn } from '../src/modules/inventory/domain/index.js';
 import { createBcryptHasher } from '../src/modules/auth/password-hasher.js';
 import { createPrismaUserRepository } from '../src/modules/users/user.prisma-repository.js';
+import { createPrismaCatalogSeedStore } from '../src/seed/catalog-seed.prisma-store.js';
+import { seedCatalog } from '../src/seed/seed-catalog.js';
 import { parseSeedConfig, SeedConfigError, seedUsers } from '../src/seed/seed-users.js';
 
-// Run with `npx prisma db seed`. Prints emails and roles only, never passwords.
+const DEFAULT_TIME_ZONE = 'America/Bogota';
+
+function businessTimeZone(): string {
+  // An empty APP_TIMEZONE= (copied from .env.example) means "use the default".
+  const raw = process.env.APP_TIMEZONE?.trim() ?? '';
+  const value = raw === '' ? DEFAULT_TIME_ZONE : raw;
+  if (!isValidTimeZone(value)) {
+    throw new SeedConfigError(['APP_TIMEZONE: must be an IANA time zone such as America/Bogota']);
+  }
+  return value;
+}
+
+// Run with `npx prisma db seed`. Prints emails, roles and counts only, never passwords.
 async function main(): Promise<void> {
   dotenv.config({ quiet: true });
   const config = parseSeedConfig(process.env);
-  const seeded = await seedUsers(createPrismaUserRepository(prisma), createBcryptHasher(), config);
+  const timeZone = businessTimeZone();
+
+  const users = createPrismaUserRepository(prisma);
+  const seeded = await seedUsers(users, createBcryptHasher(), config);
   for (const user of seeded) {
     process.stdout.write(`Seeded ${user.role}: ${user.email}\n`);
   }
+
+  const admin = await users.findByEmail(normalizeEmail(config.admin.email));
+  if (!admin) throw new Error('The seeded admin user was not found');
+
+  const today = todayIn(timeZone, new Date());
+  const result = await seedCatalog({
+    store: createPrismaCatalogSeedStore(prisma),
+    adminUserId: admin.id,
+    today,
+  });
+  process.stdout.write(
+    result.inventorySeeded
+      ? `Seeded catalog: ${result.productsCreated} products, ${result.lotsCreated} lots, ` +
+          `${result.movementsCreated} movements (relative to ${today} in ${timeZone})\n`
+      : `Catalog already present: ${result.productsCreated} missing products added, inventory untouched\n`,
+  );
 }
 
 main()

@@ -62,6 +62,19 @@ describe('parseEnv', () => {
     );
   });
 
+  it('defaults APP_TIMEZONE to America/Bogota and accepts other IANA zones', () => {
+    expect(parseEnv(validEnv).APP_TIMEZONE).toBe('America/Bogota');
+    expect(parseEnv({ ...validEnv, APP_TIMEZONE: 'Europe/Madrid' }).APP_TIMEZONE).toBe(
+      'Europe/Madrid',
+    );
+  });
+
+  it('rejects an unknown APP_TIMEZONE', () => {
+    expect(() => parseEnv({ ...validEnv, APP_TIMEZONE: 'Mars/Olympus' })).toThrow(
+      /APP_TIMEZONE: must be an IANA time zone/,
+    );
+  });
+
   it('never includes variable values in the error message', () => {
     const secret = 'not-a-url-but-a-secret';
 

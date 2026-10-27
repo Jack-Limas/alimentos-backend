@@ -231,6 +231,24 @@ sequenceDiagram
 valores por defecto: si falta alguna variable o la contraseña del admin es débil, falla con un
 mensaje que nombra la variable sin mostrar su valor. Es idempotente y nunca imprime contraseñas.
 
+### Catálogo e inventario demo (seed)
+
+Después de los usuarios, el seed carga **56 productos** de una distribuidora colombiana: arroz,
+fríjol, leche, queso campesino, huevos, pollo, papa pastusa, plátano, tomate, pan, atún, gaseosa,
+etc. Cada uno tiene categoría, unidad y stock mínimo coherentes.
+
+- **Solo si la tabla `products` está vacía**, crea en una transacción:
+  - 1 a 3 lotes con stock por producto;
+  - un historial de recepciones y despachos (`EXIT_DISPATCH`) de los últimos 29 días con rotación
+    variada.
+    Todas las fechas son relativas a "hoy" en `APP_TIMEZONE`, así que la demo siempre muestra stock
+    bajo, productos agotados, vencimientos próximos, lotes vencidos y riesgo de desperdicio.
+- Si ya hay productos, solo agrega los del catálogo que falten y no toca el inventario. Correrlo
+  dos veces no duplica nada.
+- Las cantidades salen de un generador pseudoaleatorio con semilla fija: son reproducibles.
+- Los movimientos demo quedan a nombre del admin del seed.
+- `SEED_SIZE=large` (seed grande) llega en una fase posterior.
+
 ## Inventario
 
 Cada producto tiene **lotes** (`InventoryLot`) con su fecha de vencimiento, y cada cambio de stock

@@ -38,6 +38,18 @@ Conventions for anyone (human or AI assistant) working in this repository.
   transaction together with their audit row; decrements are conditional (`quantity >= qty`).
 - Thresholds live in `INVENTORY_RULES`; do not hardcode 7 or 30 elsewhere.
 
+## Order and alert rules
+
+- Order transitions come only from `ORDER_TRANSITIONS` / `checkManualTransition`. Check the edge
+  before the role (409 before 403). `PENDING -> IN_PREPARATION` belongs to proposal confirmation.
+- Status updates are conditional (`WHERE id AND status = <read status>`); a lost race is a 409
+  and must leave no partial writes.
+- Cancelling returns stock with `RETURN` movements to the same lots, in the same transaction as the
+  status change, history and audit.
+- Alerts are computed on the fly with `buildAlerts`, reusing `productMetrics`; thresholds live in
+  `ALERT_RULES`. Fetch aggregates (groupBy) and join them with a `Map`, never one query per row.
+- Audit metadata never stores customer phone numbers or emails.
+
 ## Errors
 
 - Response format: `{ "error": { "code": "STRING", "message": "text", "details": {} } }`.

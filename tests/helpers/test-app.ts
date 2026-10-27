@@ -11,6 +11,10 @@ import {
   createInMemoryInventoryRepository,
   createInMemoryProductRepository,
 } from './in-memory-inventory.js';
+import {
+  createInMemoryCustomerRepository,
+  createInMemoryOrderRepository,
+} from './in-memory-orders.js';
 
 export const ALLOWED_ORIGIN = 'http://localhost:3000';
 export const TEST_JWT_SECRET = 'test-jwt-access-secret-0123456789abcdef0123';
@@ -23,14 +27,25 @@ export const testHasher = createBcryptHasher(4);
 
 export function createTestRepositories() {
   const auditLogs = createInMemoryAuditLogRepository();
+  // Every repository writes its audit rows into the same in-memory audit log.
+  const products = createInMemoryProductRepository(auditLogs);
+  const inventory = createInMemoryInventoryRepository(auditLogs);
+  const customers = createInMemoryCustomerRepository(auditLogs);
   return {
     users: createInMemoryUserRepository(),
     refreshTokens: createInMemoryRefreshTokenRepository(),
     loginAttempts: createInMemoryLoginAttemptRepository(),
     auditLogs,
-    // Both write their audit rows into the same in-memory audit log.
-    products: createInMemoryProductRepository(auditLogs),
-    inventory: createInMemoryInventoryRepository(auditLogs),
+    products,
+    inventory,
+    customers,
+    // Orders read products and customers and give stock back to the same lots.
+    orders: createInMemoryOrderRepository(auditLogs, {
+      products: products.products,
+      customers: customers.customers,
+      lots: inventory.lots,
+      movements: inventory.movements,
+    }),
   } satisfies AppRepositories;
 }
 

@@ -4,6 +4,11 @@ import { readAppInfo, type AppInfo } from './config/app-info.js';
 import type { Env } from './config/env.js';
 import { buildLoggerOptions } from './config/logger.js';
 import {
+  alertsRoutes,
+  createAlertsController,
+  createAlertsService,
+} from './modules/alerts/index.js';
+import {
   auditRoutes,
   createAuditController,
   createAuditService,
@@ -22,6 +27,13 @@ import {
   type RefreshTokenRepository,
 } from './modules/auth/index.js';
 import {
+  createCustomerController,
+  createCustomerService,
+  createPrismaCustomerRepository,
+  customerRoutes,
+  type CustomerRepository,
+} from './modules/customers/index.js';
+import {
   createHealthController,
   createHealthService,
   createPrismaDatabaseCheck,
@@ -36,6 +48,13 @@ import {
   inventoryRoutes,
   type InventoryRepository,
 } from './modules/inventory/index.js';
+import {
+  createOrderController,
+  createOrderService,
+  createPrismaOrderRepository,
+  orderRoutes,
+  type OrderRepository,
+} from './modules/orders/index.js';
 import {
   createPrismaProductRepository,
   createProductController,
@@ -59,6 +78,8 @@ export interface AppRepositories {
   auditLogs: AuditLogRepository;
   products: ProductRepository;
   inventory: InventoryRepository;
+  customers: CustomerRepository;
+  orders: OrderRepository;
 }
 
 export interface AppDeps {
@@ -107,6 +128,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       auditLogs: createPrismaAuditLogRepository(prisma),
       products: createPrismaProductRepository(prisma),
       inventory: createPrismaInventoryRepository(prisma),
+      customers: createPrismaCustomerRepository(prisma),
+      orders: createPrismaOrderRepository(prisma),
     };
     app.addHook('onClose', async () => {
       await prisma.$disconnect();
@@ -166,6 +189,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     inventory: repositories.inventory,
     metrics: inventoryMetrics,
   });
+  const customerService = createCustomerService({ customers: repositories.customers });
+  const orderService = createOrderService({
+    orders: repositories.orders,
+    customers: repositories.customers,
+    today: () => inventoryMetrics.today(),
+  });
+  const alertsService = createAlertsService({
+    products: repositories.products,
+    orders: repositories.orders,
+    metrics: inventoryMetrics,
+  });
 
   // Root /health for the Render health check; full module under /api/v1.
   await app.register(healthRoutes, { controller: healthController, includeReadiness: false });
@@ -189,6 +223,18 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(inventoryRoutes, {
     prefix: `${API_PREFIX}/inventory`,
     controller: createInventoryController(inventoryService),
+  });
+  await app.register(customerRoutes, {
+    prefix: `${API_PREFIX}/customers`,
+    controller: createCustomerController(customerService),
+  });
+  await app.register(orderRoutes, {
+    prefix: `${API_PREFIX}/orders`,
+    controller: createOrderController(orderService),
+  });
+  await app.register(alertsRoutes, {
+    prefix: `${API_PREFIX}/alerts`,
+    controller: createAlertsController(alertsService),
   });
 
   return app;

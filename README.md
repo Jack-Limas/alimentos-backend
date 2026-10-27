@@ -231,6 +231,49 @@ sequenceDiagram
 valores por defecto: si falta alguna variable o la contraseña del admin es débil, falla con un
 mensaje que nombra la variable sin mostrar su valor. Es idempotente y nunca imprime contraseñas.
 
+## Inventario
+
+Cada producto tiene **lotes** (`InventoryLot`) con su fecha de vencimiento, y cada cambio de stock
+queda como un **movimiento** (`InventoryMovement`) con su tipo, cantidad positiva, usuario y
+motivo. Ningún producto se borra: se desactiva.
+
+### Lógica pura y probada
+
+`src/modules/inventory/domain/` no importa Prisma ni lee el reloj: recibe datos y devuelve
+resultados.
+
+- `allocateFefo(lots, qty, { today, includeExpired })` reparte una salida empezando por el lote que
+  vence primero (desempate por recepción y luego por id) y devuelve las asignaciones y el
+  faltante.
+- `productMetrics({ minStock, lots }, salidas30d, today)` calcula `availableQty`, `nearestExpiry`,
+  `stockStatus`, `avgDailyOut30d`, `coverageDays`, `wasteRisk` y `reasons[]` (códigos y
+  parámetros, nunca texto). Los umbrales están en `INVENTORY_RULES` (`EXPIRY_WARNING_DAYS = 7`), y
+  las alertas los reutilizarán.
+- **Calendario**: "hoy" y los días hasta el vencimiento se calculan en `APP_TIMEZONE`
+  (`America/Bogota`). A las 23:30 de Bogotá ya es el día siguiente en UTC, pero el sistema sigue
+  usando la fecha de Bogotá. Un lote vence al terminar su `expiryDate`.
+- **Cantidades**: `Decimal(12,3)` en la BD y `number` en el JSON. Las operaciones se hacen en
+  milésimas enteras para evitar errores como `0.1 + 0.2 ≠ 0.3`.
+
+### Salidas sin carreras
+
+Una salida (`POST /inventory/exits`) se escribe en una transacción. Cada lote se descuenta con
+`updateMany({ where: { id, quantity: { gte: qty } } })` y se verifica que actualizó una fila. Si
+otra salida simultánea consumió el stock, PostgreSQL vuelve a evaluar la condición al liberar la
+fila, la actualización afecta 0 filas y se hace rollback de todo. La respuesta es 409
+`INSUFFICIENT_STOCK`, sin movimientos parciales. Es concurrencia optimista, sin locks explícitos.
+Como defensa extra, la migración agrega `CHECK (quantity >= 0)` en los lotes.
+
+### Listados sin N+1
+
+`GET /products` calcula las métricas de toda la página con **dos consultas agregadas**:
+
+- un `groupBy` de stock por producto y fecha de vencimiento;
+- un `GROUP BY` en SQL de las salidas `EXIT_DISPATCH` de 30 días por producto.
+
+Los dos resultados se combinan en un `Map<productId, …>`. Los filtros `stockStatus` y
+`expiringWithinDays` dependen de esas métricas, así que se aplican después de calcularlas.
+
 ## CI
 
 GitHub Actions en cada push y PR a `main`: `npm ci`, `npx prisma generate`, lint, formato,

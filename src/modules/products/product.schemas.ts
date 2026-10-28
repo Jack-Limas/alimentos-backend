@@ -32,6 +32,7 @@ export const productListQuerySchema = paginationQuerySchema.extend({
   category: z.enum(ProductCategory).optional(),
   status: z.enum(ProductStatus).optional(),
   stockStatus: z.enum(['LOW', 'OUT']).optional(),
+  wasteRisk: z.enum(['HIGH', 'LOW', 'NONE']).optional(),
   expiringWithinDays: z.coerce.number().int().min(0).max(3650).optional(),
 });
 

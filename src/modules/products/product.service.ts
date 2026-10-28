@@ -65,6 +65,7 @@ export function createProductService({
 
   function matchesComputed(dto: ProductMetrics, query: ProductListQuery): boolean {
     if (query.stockStatus && dto.stockStatus !== query.stockStatus) return false;
+    if (query.wasteRisk && dto.wasteRisk !== query.wasteRisk) return false;
     if (query.expiringWithinDays !== undefined) {
       return (
         dto.daysToNearestExpiry !== null && dto.daysToNearestExpiry <= query.expiringWithinDays
@@ -78,12 +79,16 @@ export function createProductService({
       const filter = { search: query.search, category: query.category, status: query.status };
       const page = toSkipTake(query);
 
-      if (query.stockStatus === undefined && query.expiringWithinDays === undefined) {
+      const computed =
+        query.stockStatus !== undefined ||
+        query.wasteRisk !== undefined ||
+        query.expiringWithinDays !== undefined;
+      if (!computed) {
         const { items, total } = await products.list(filter, page);
         return paginate(await withMetrics(items), total, query);
       }
 
-      // stockStatus and expiringWithinDays depend on live stock and outflow, which
+      // stockStatus, wasteRisk and expiringWithinDays depend on live stock and outflow, which
       // only exist after computing the metrics, so the database cannot paginate:
       // compute them for every product that passes the stored filters, then page.
       const { items } = await products.list(filter);

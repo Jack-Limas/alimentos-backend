@@ -7,7 +7,6 @@ import {
   InvalidWeightsError,
   LotBook,
   scoreOrder,
-  StrategyNotAvailableError,
   UrgencyFirstStrategy,
   WasteFirstStrategy,
 } from '../src/modules/distribution/domain/index.js';
@@ -146,7 +145,7 @@ describe('strategies', () => {
   });
 
   it('declare AI_ASSISTED but refuse it in this phase', () => {
-    expect(() => createStrategy('AI_ASSISTED')).toThrow(StrategyNotAvailableError);
+    expect(() => createStrategy('AI_ASSISTED')).toThrow('not available');
   });
 });
 
@@ -318,5 +317,59 @@ describe('buildProposal', () => {
       itemsProcessed: 0,
       totalRecommended: {},
     });
+  });
+});
+
+describe('buildProposal with tieBreakRanks (AI_ASSISTED)', () => {
+  // BALANCED with stock far from expiry: A 75, B 47.5, C 47.5 (tied), D 45 (2.5 behind: not tied).
+  const fixture = snapshot(
+    [
+      order(1, 'URGENT', 0, [['x', 1]]),
+      order(2, 'HIGH', 7, [['x', 1]]),
+      order(3, 'HIGH', 7, [['x', 1]]),
+      order(4, 'MEDIUM', 4, [['x', 1]]),
+    ],
+    [lot('l1', 'x', 100, 60)],
+  );
+  const ranks = (codes: string[]) => new Map(codes.map((code, index) => [code, index]));
+
+  it('without ranks the tie goes by due date, then age, then number', () => {
+    expect(ranked(buildProposal(fixture, balanced, fixedClock))).toEqual([1, 2, 3, 4]);
+  });
+
+  it('reorders only the orders inside a tie group', () => {
+    const result = buildProposal(fixture, balanced, {
+      ...fixedClock,
+      tieBreakRanks: ranks(['PED-000003', 'PED-000002']),
+    });
+
+    expect(ranked(result)).toEqual([1, 3, 2, 4]);
+    expect(result.ranking.map((r) => r.score)).toEqual([75, 47.5, 47.5, 45]);
+  });
+
+  it('ignores ranks of orders that are not tied with each other', () => {
+    const result = buildProposal(fixture, balanced, {
+      ...fixedClock,
+      tieBreakRanks: ranks(['PED-000004', 'PED-000001', 'PED-000099']),
+    });
+
+    expect(ranked(result)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('puts ranked orders of a group before the ones the AI left out', () => {
+    const tied = snapshot(
+      [
+        order(1, 'HIGH', 7, [['x', 1]]),
+        order(2, 'HIGH', 7, [['x', 1]]),
+        order(3, 'HIGH', 7, [['x', 1]]),
+      ],
+      [lot('l1', 'x', 100, 60)],
+    );
+
+    expect(
+      ranked(
+        buildProposal(tied, balanced, { ...fixedClock, tieBreakRanks: ranks(['PED-000003']) }),
+      ),
+    ).toEqual([3, 1, 2]);
   });
 });

@@ -1,9 +1,11 @@
 import { allocateFefo, daysBetween, fromMilli, toMilli } from '../../inventory/domain/index.js';
+import { formatOrderCode } from '../../orders/domain/index.js';
 import { LotBook } from './lot-book.js';
 import { MinHeap } from './min-heap.js';
 import type { DistributionReason, OrderScore, ScoreComponents } from './score.js';
 import type { DistributionSnapshot, SnapshotOrder, SnapshotProduct } from './snapshot.js';
 import type { PrioritizationStrategy } from './strategies.js';
+import { findTieGroups } from './ties.js';
 import type { StrategyName, Weights } from './weights.js';
 
 /** An order goes back to the heap at most this many times when its score drops. */
@@ -77,9 +79,45 @@ function compareEntries(a: HeapEntry, b: HeapEntry): number {
   return a.order.number - b.order.number;
 }
 
+/**
+ * AI_ASSISTED: inside a group of tied orders (initial scores closer than
+ * TIE_SCORE_DELTA) the given rank decides first, ranked orders before the
+ * ones without a rank; between groups, and for every other order, the rules
+ * comparator is unchanged. Groups come from the initial scores, so the order
+ * stays total even when lazy re-scoring changes a score.
+ */
+function tieAwareComparator(
+  entries: readonly HeapEntry[],
+  ranks: ReadonlyMap<string, number>,
+): (a: HeapEntry, b: HeapEntry) => number {
+  const groupOf = new Map<string, number>();
+  findTieGroups(
+    entries.map((entry) => ({ key: entry.order.id, score: entry.score.score })),
+  ).forEach((group, index) => {
+    for (const orderId of group) groupOf.set(orderId, index);
+  });
+  const rankOf = (entry: HeapEntry) =>
+    ranks.get(formatOrderCode(entry.order.number)) ?? Number.POSITIVE_INFINITY;
+
+  return (a, b) => {
+    const group = groupOf.get(a.order.id);
+    if (group !== undefined && group === groupOf.get(b.order.id)) {
+      const ra = rankOf(a);
+      const rb = rankOf(b);
+      if (ra !== rb) return ra < rb ? -1 : 1;
+    }
+    return compareEntries(a, b);
+  };
+}
+
 export interface BuildOptions {
   /** Clock for processingMs; injectable so tests and fixtures stay deterministic. */
   now?: () => number;
+  /**
+   * orderCode → rank (lower first) for AI_ASSISTED. Only reorders orders
+   * inside the same tie group, before the due date tie-breaker.
+   */
+  tieBreakRanks?: ReadonlyMap<string, number>;
 }
 
 /**
@@ -90,22 +128,30 @@ export interface BuildOptions {
  *    re-scoring, at most MAX_RESCORES times); otherwise it is served.
  * 3. Each item takes stock FEFO from dispatchable lots (expiring tomorrow or
  *    later), decrementing a Map<lotId, remaining>.
+ * With tieBreakRanks (AI_ASSISTED), tied orders follow those ranks.
  * Pure and deterministic: the same snapshot and strategy give the same plan.
  */
 export function buildProposal(
   snapshot: DistributionSnapshot,
   strategy: PrioritizationStrategy,
-  { now = () => performance.now() }: BuildOptions = {},
+  { now = () => performance.now(), tieBreakRanks }: BuildOptions = {},
 ): ProposalResult {
   const started = now();
   const today = snapshot.businessDate;
   const lots = new LotBook(snapshot.lots, today);
   const units = new Map(snapshot.products.map((product) => [product.id, product.unit]));
 
-  const heap = new MinHeap<HeapEntry>(compareEntries);
-  for (const order of snapshot.orders) {
-    heap.push({ order, score: strategy.score(order, lots, today), rescores: 0 });
-  }
+  const initial: HeapEntry[] = snapshot.orders.map((order) => ({
+    order,
+    score: strategy.score(order, lots, today),
+    rescores: 0,
+  }));
+  const compare =
+    tieBreakRanks && tieBreakRanks.size > 0
+      ? tieAwareComparator(initial, tieBreakRanks)
+      : compareEntries;
+  const heap = new MinHeap<HeapEntry>(compare);
+  for (const entry of initial) heap.push(entry);
 
   const lines: ProposalLineDraft[] = [];
   const ranking: RankedOrder[] = [];
@@ -121,7 +167,7 @@ export function buildProposal(
       current.score < entry.score.score &&
       entry.rescores < MAX_RESCORES &&
       next !== undefined &&
-      compareEntries(refreshed, next) > 0
+      compare(refreshed, next) > 0
     ) {
       // Another order deserves to go first now: re-insert with the new score.
       heap.push({ ...refreshed, rescores: entry.rescores + 1 });

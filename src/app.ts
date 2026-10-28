@@ -4,6 +4,15 @@ import { readAppInfo, type AppInfo } from './config/app-info.js';
 import type { Env } from './config/env.js';
 import { buildLoggerOptions } from './config/logger.js';
 import {
+  aiRoutes,
+  createAiClient,
+  createAiController,
+  createAiGateway,
+  createAiService,
+  createRateLimiter,
+  type RateLimiter,
+} from './modules/ai/index.js';
+import {
   alertsRoutes,
   createAlertsController,
   createAlertsService,
@@ -101,6 +110,9 @@ export interface AppDeps {
     | 'LOGIN_MAX_ATTEMPTS'
     | 'LOGIN_WINDOW_MINUTES'
     | 'APP_TIMEZONE'
+    | 'AI_SERVICE_URL'
+    | 'AI_INTERNAL_KEY'
+    | 'AI_TIMEOUT_MS'
   >;
   /** Defaults to a real `SELECT 1` through Prisma. Tests inject a fake. */
   checkDatabase?: DatabaseCheck;
@@ -110,6 +122,8 @@ export interface AppDeps {
   clock?: Clock;
   appInfo?: AppInfo;
   logger?: NonNullable<FastifyServerOptions['logger']>;
+  /** Tests inject a fake fetch for alimentos-ai, a clock for its cool-down and a limiter. */
+  ai?: { fetch?: typeof fetch; now?: () => number; limiter?: RateLimiter };
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
@@ -204,16 +218,41 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     customers: repositories.customers,
     today: () => inventoryMetrics.today(),
   });
+  // Optional: without AI_SERVICE_URL / AI_INTERNAL_KEY the AI is "not configured",
+  // AI_ASSISTED degrades to BALANCED and /ai answers 503 with NOT_CONFIGURED.
+  const aiClient = createAiClient({
+    baseUrl: env.AI_SERVICE_URL,
+    internalKey: env.AI_INTERNAL_KEY,
+    timeoutMs: env.AI_TIMEOUT_MS,
+    ...(deps.ai?.fetch ? { fetch: deps.ai.fetch } : {}),
+    ...(deps.ai?.now ? { now: deps.ai.now } : {}),
+  });
+  if (!aiClient.configured) {
+    app.log.info('AI service not configured: AI_ASSISTED degrades to the rules result');
+  }
+  const aiGateway = createAiGateway({ client: aiClient, audit: auditService });
   const distributionService = createDistributionService({
     distribution: repositories.distribution,
     inventory: repositories.inventory,
     clock,
     timeZone: env.APP_TIMEZONE,
+    ai: aiGateway,
   });
   const alertsService = createAlertsService({
     products: repositories.products,
     orders: repositories.orders,
     metrics: inventoryMetrics,
+  });
+  const aiService = createAiService({
+    gateway: aiGateway,
+    distribution: repositories.distribution,
+    distributionService,
+    products: repositories.products,
+    customers: repositories.customers,
+    metrics: inventoryMetrics,
+    inventory: inventoryService,
+    alerts: alertsService,
+    clock,
   });
 
   // Root /health for the Render health check; full module under /api/v1.
@@ -254,6 +293,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(alertsRoutes, {
     prefix: `${API_PREFIX}/alerts`,
     controller: createAlertsController(alertsService),
+  });
+  await app.register(aiRoutes, {
+    prefix: `${API_PREFIX}/ai`,
+    controller: createAiController(aiService),
+    limiter: deps.ai?.limiter ?? createRateLimiter(),
   });
 
   return app;

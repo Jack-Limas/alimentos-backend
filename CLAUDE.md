@@ -56,9 +56,24 @@ Conventions for anyone (human or AI assistant) working in this repository.
   `processingMs`. Any change to scoring, tie-breaking or lot eligibility must update the parity
   fixtures in `tests/fixtures/distribution-parity/` (and the frontend copy).
 - A lot is dispatchable only if it expires tomorrow or later (`MIN_DAYS_TO_DISPATCH`).
-- The server never accepts plan figures from the client: only `{ strategy, weights? }`.
+- The server never accepts plan figures from the client: only `{ strategy, weights?, locale? }`.
 - Confirmation is one transaction of conditional updates; any mismatch is a 409 `STALE_PROPOSAL`
   with nothing written.
+
+## AI rules
+
+- Only `src/modules/ai/` talks to `alimentos-ai`, through `AiClient` → `AiGateway` (the gateway
+  writes the `AI_REQUESTED` audit row: endpoint, category, latency; never prompts or answers).
+- The AI is optional: missing `AI_SERVICE_URL` / `AI_INTERNAL_KEY` means `NOT_CONFIGURED`, never a
+  crash. AI failures surface as 503 `AI_UNAVAILABLE` with `details.category` (`AiError.toAppError`),
+  except in `AI_ASSISTED`, which falls back to `BALANCED` with `degraded: true`.
+- AI inputs are built in `ai-context.ts` from database data: customers travel as their type, never
+  name, email or phone. Respect the alimentos-ai limits (200 items, 120 characters).
+- The AI may only reorder tied orders (`findTieGroups`, |Δscore| < 2) via `tieBreakRanks`; the
+  engine stays pure and synchronous.
+- Retry only `TIMEOUT`, `UPSTREAM_ERROR` and network errors; respect the `QUOTA_EXCEEDED` cool-down.
+- Never log or document the value of `AI_INTERNAL_KEY`; tests use a fake `fetch`, never the real
+  service.
 
 ## Errors
 

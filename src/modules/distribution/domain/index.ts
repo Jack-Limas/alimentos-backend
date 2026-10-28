@@ -38,6 +38,7 @@ export {
   WasteFirstStrategy,
   type PrioritizationStrategy,
 } from './strategies.js';
+export { findTieGroups, TIE_SCORE_DELTA } from './ties.js';
 export {
   checkWeights,
   RULE_STRATEGIES,

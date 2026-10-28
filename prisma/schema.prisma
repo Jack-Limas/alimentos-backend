@@ -134,8 +134,9 @@ model Product {
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
 
-  lots       InventoryLot[]
-  orderItems OrderItem[]
+  lots          InventoryLot[]
+  orderItems    OrderItem[]
+  proposalLines ProposalLine[]
 
   @@map("products")
 }
@@ -155,6 +156,8 @@ model InventoryLot {
   createdAt       DateTime @default(now())
 
   movements InventoryMovement[]
+
+  proposalLines ProposalLine[]
 
   @@index([productId, expiryDate])
   @@map("inventory_lots")
@@ -248,9 +251,10 @@ model Order {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  items     OrderItem[]
-  history   OrderStatusHistory[]
-  movements InventoryMovement[]
+  items         OrderItem[]
+  history       OrderStatusHistory[]
+  movements     InventoryMovement[]
+  proposalLines ProposalLine[]
 
   @@index([status, dueDate])
   @@index([customerId])
@@ -267,6 +271,8 @@ model OrderItem {
   requestedQty Decimal @db.Decimal(12, 3)
   /// Assigned from lots when the distribution proposal is confirmed.
   allocatedQty Decimal @default(0) @db.Decimal(12, 3)
+
+  proposalLines ProposalLine[]
 
   @@unique([orderId, productId])
   @@map("order_items")
@@ -326,6 +332,34 @@ model DistributionProposal {
   confirmedAt    DateTime?
   createdAt      DateTime       @default(now())
 
+  lines ProposalLine[]
+
   @@index([status, createdAt])
   @@map("distribution_proposals")
+}
+
+/// One recommended (order item, lot) pair; lotId is null when there was no stock.
+model ProposalLine {
+  id             String               @id @default(uuid()) @db.Uuid
+  proposalId     String               @db.Uuid
+  proposal       DistributionProposal @relation(fields: [proposalId], references: [id], onDelete: Restrict)
+  orderId        String               @db.Uuid
+  order          Order                @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderItemId    String               @db.Uuid
+  orderItem      OrderItem            @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  productId      String               @db.Uuid
+  product        Product              @relation(fields: [productId], references: [id], onDelete: Restrict)
+  lotId          String?              @db.Uuid
+  lot            InventoryLot?        @relation(fields: [lotId], references: [id], onDelete: Restrict)
+  /// Position of the order in the plan (1 = served first).
+  rank           Int
+  score          Decimal              @db.Decimal(6, 2)
+  requestedQty   Decimal              @db.Decimal(12, 3)
+  availableQty   Decimal              @db.Decimal(12, 3)
+  recommendedQty Decimal              @db.Decimal(12, 3)
+  /// [{ code, params }]
+  reasons        Json
+
+  @@index([proposalId, rank])
+  @@map("proposal_lines")
 }

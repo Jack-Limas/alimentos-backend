@@ -269,23 +269,47 @@ El access token es un JWT `{ sub, role }` firmado con `JWT_ACCESS_SECRET` (durac
 | POST | `/distribution/proposals/:id/discard` | A, O | |
 | POST | `/distribution/proposals/:id/sheet-link` | A, O | **[EXTRA]** → `{ url, expiresAt }` (enlace firmado de 10 min) |
 
-**Algoritmo (`RulesStrategy`), transparente y configurable**
+**Algoritmo de reglas, transparente y configurable**
 
 ```
-score = wP·priority + wD·deadlineUrgency + wE·expiryPressure      (pesos por defecto 40 / 35 / 25)
+score = wP·priority + wD·deadlineUrgency + wE·expiryPressure      (0–100, 2 decimales)
 priority        = LOW .25 · MEDIUM .5 · HIGH .75 · URGENT 1
-deadlineUrgency = clamp(1 − díasHastaDueDate / 14, 0, 1)
+deadlineUrgency = clamp(1 − díasHastaDueDate / 14, 0, 1)          (vencido = 1)
 expiryPressure  = máx sobre los ítems de clamp(1 − díasHastaVencimientoDelLoteFEFO / 30, 0, 1)
 ```
 
-1. Pedidos `PENDING` → **min-heap** por `-score` (desempate: `dueDate`, luego antigüedad).
-2. Por cada ítem: lotes del producto ordenados por `expiryDate` asc (**FEFO**), excluyendo vencidos o que vencen antes de `dueDate`.
-3. `recommendedQty = min(requestedQty, disponibleRestante)`; los lotes se descuentan en un `Map<lotId, remaining>`.
-4. Cada línea guarda `reasons[]`: `PRIORITY_URGENT`, `DUE_IN_DAYS`, `EXPIRES_IN_DAYS`, `PARTIAL_STOCK`, `NO_STOCK`.
+| Estrategia (patrón Strategy) | wP / wD / wE | Para qué |
+|---|---|---|
+| `BALANCED` | 40 / 35 / 25 | Equilibrio por defecto |
+| `URGENCY_FIRST` | 20 / 70 / 10 | Entregar a tiempo |
+| `WASTE_FIRST` | 20 / 20 / 60 | Mover primero lo que vence |
+| `AI_ASSISTED` | — | Declarada; responde 400 `STRATEGY_NOT_AVAILABLE` hasta la fase 3 |
 
-`AI_ASSISTED`: ejecuta `RulesStrategy` y pide a la IA reordenar **solo empates** (|Δscore| < 2) y explicar. Si la IA falla → resultado de reglas con `degraded: true`.
+Se pueden enviar pesos propios `{ priority, deadlineUrgency, expiryPressure }`: no negativos, máx. 2 decimales y **suma exacta 100** (si no, 400 `VALIDATION_ERROR` con `details.problem`).
 
-> El mismo algoritmo existe en el backend y en el Web Worker del frontend (no hay código compartido). La paridad se verifica con los mismos fixtures en las pruebas de ambos repos.
+1. Todos los pedidos `PENDING` se puntúan y entran a un **min-heap** (mayor score primero; desempate estable: `dueDate`, luego `createdAt`, luego `number`).
+2. Se saca el mejor y se **vuelve a puntuar** con el estado actual de los lotes (otro pedido pudo llevarse el lote que vencía antes). Si su score bajó y queda detrás del siguiente, vuelve al heap (**re-puntuación perezosa**, máx. 3 veces por pedido); si no, se atiende.
+3. Cada ítem toma stock **FEFO** (`expiryDate`, luego `receivedAt`, luego `id`) de un `Map<lotId, restante>`.
+4. **Lote despachable = vence mañana o después** (`expiryDate ≥ hoy + 1`; lo que vence hoy no se despacha). *Cambio frente a la versión anterior ("excluir los que vencen antes de `dueDate`")*: esa regla dejaba en bodega justo los lotes más próximos a vencer cuando el pedido era para más adelante, y terminaban en merma. Enviar antes lo que vence antes reduce la merma; lo que vence hoy queda para merma o uso del día.
+5. Una línea por (ítem, lote) con `rank, score, requestedQty, availableQty` (stock despachable del producto cuando se atendió el ítem), `recommendedQty` y `reasons[]`: `PRIORITY_LOW|MEDIUM|HIGH|URGENT`, `DUE_IN_DAYS {days}`, `OVERDUE {days}`, `EXPIRES_IN_DAYS {days}`, `PARTIAL_STOCK {requested, allocated}`, `NO_STOCK {requested}` (línea sin lote y `recommendedQty = 0`).
+6. `summary`: `ordersFull, ordersPartial, ordersUnserved, totalRecommended` (por unidad, nunca se suman unidades distintas), `itemsProcessed, linesCount, rescoreCount, processingMs`.
+
+Es determinista: el mismo snapshot y la misma estrategia dan siempre el mismo plan, sin importar el orden de la entrada.
+
+- **Snapshot** (`GET /distribution/snapshot`): `{ businessDate, orders[{ id, code, number, customerName, priority, dueDate, createdAt, items[{ id, productId, requestedQty }] }], lots[{ id, productId, quantity, expiryDate, receivedAt }], products[{ id, name, unit, avgDailyOut30d }], strategies, rules }`. Solo lotes despachables con stock. Cuatro consultas en total, sin N+1.
+- **Generar** (`POST /proposals`, 201): el cliente solo envía `{ strategy, weights? }`; cualquier otra cifra es 400. El servidor arma el snapshot, calcula y guarda `DRAFT` + líneas + auditoría.
+- **Detalle** (`GET /proposals/:id`): líneas agrupadas por pedido en orden de `rank`, con `components`, `fulfillment: FULL|PARTIAL|UNSERVED`, `rescores` y el estado actual del pedido.
+- **Confirmar** (`POST /:id/confirm`), en **una transacción**:
+  1. `DRAFT → CONFIRMED` condicional (si no estaba en DRAFT → 409 `STALE_PROPOSAL` `reason: NOT_DRAFT`).
+  2. Por cada línea con `recommendedQty > 0`: decremento condicional del lote (`quantity >= qty`); si falla → 409 `STALE_PROPOSAL` `reason: STOCK_CHANGED` con `{ lotId, productId }`.
+  3. Cada pedido con asignación pasa `PENDING → IN_PREPARATION` de forma condicional (si ya no estaba `PENDING` → 409 `reason: ORDER_CHANGED` con `{ orderId }`) + historial con nota `proposal:<id>`. Los pedidos sin asignación siguen `PENDING`.
+  4. Movimientos `EXIT_DISPATCH` con `orderId`, `allocatedQty += cantidad`, auditoría `PROPOSAL_CONFIRMED`.
+  Cualquier 409 deshace todo: no quedan cambios parciales. Una propuesta de otro día de negocio responde 409 `reason: BUSINESS_DATE_CHANGED` (los lotes despachables dependen de la fecha).
+- **Descartar** (`POST /:id/discard`): solo `DRAFT`; si no, 409 `INVALID_STATUS_TRANSITION`.
+
+`AI_ASSISTED` (fase 3): ejecuta las reglas y pide a la IA reordenar **solo empates** (|Δscore| < 2) y explicar. Si la IA falla → resultado de reglas con `degraded: true`.
+
+> El mismo algoritmo existe en el backend y en el Web Worker del frontend (no hay código compartido). La paridad se verifica con los fixtures de `alimentos-backend/tests/fixtures/distribution-parity/`, que el frontend copia y ejecuta en sus pruebas.
 
 ### 4.8 Alertas — [OBL]
 | Método | Ruta | Rol |

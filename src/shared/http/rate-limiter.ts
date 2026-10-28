@@ -1,5 +1,7 @@
 /** Calls to /ai/* per user and window (contract 4.9), kept in memory. */
 export const AI_RATE_LIMIT = { max: 10, windowMs: 60_000 } as const;
+/** GET /public/impact per IP and window (contract 4.11). */
+export const PUBLIC_RATE_LIMIT = { max: 60, windowMs: 60_000 } as const;
 
 export type RateLimitResult = { allowed: true } | { allowed: false; retryAfterSec: number };
 

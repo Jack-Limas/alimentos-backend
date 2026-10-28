@@ -2,7 +2,7 @@ import type { FastifyPluginCallback, preHandlerHookHandler } from 'fastify';
 import { actorOf } from '../../shared/http/actor.js';
 import { AppError } from '../../shared/errors/index.js';
 import type { AiController } from './ai.controller.js';
-import type { RateLimiter } from './ai-rate-limit.js';
+import type { RateLimiter } from '../../shared/http/rate-limiter.js';
 
 export interface AiRoutesOptions {
   controller: AiController;

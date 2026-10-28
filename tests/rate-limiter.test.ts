@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AI_RATE_LIMIT, createRateLimiter } from '../src/modules/ai/ai-rate-limit.js';
+import { AI_RATE_LIMIT, createRateLimiter } from '../src/shared/http/rate-limiter.js';
 
 describe('createRateLimiter', () => {
   it('allows 10 calls per minute and user, then answers with the seconds to wait', () => {

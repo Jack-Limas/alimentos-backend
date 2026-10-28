@@ -1,0 +1,416 @@
+{
+  "description": "URGENCY_FIRST: overdue orders first; a lot expiring today is never dispatched; FEFO across lots.",
+  "strategy": "URGENCY_FIRST",
+  "snapshot": {
+    "businessDate": "2026-10-28",
+    "orders": [
+      {
+        "id": "order-10",
+        "number": 10,
+        "priority": "LOW",
+        "dueDate": "2026-10-26",
+        "createdAt": "2026-10-22T12:00:00.000Z",
+        "items": [
+          {
+            "id": "item-10-1",
+            "productId": "milk",
+            "requestedQty": 6
+          }
+        ]
+      },
+      {
+        "id": "order-11",
+        "number": 11,
+        "priority": "URGENT",
+        "dueDate": "2026-11-06",
+        "createdAt": "2026-10-23T12:00:00.000Z",
+        "items": [
+          {
+            "id": "item-11-1",
+            "productId": "milk",
+            "requestedQty": 4
+          },
+          {
+            "id": "item-11-2",
+            "productId": "rice",
+            "requestedQty": 25.5
+          }
+        ]
+      },
+      {
+        "id": "order-12",
+        "number": 12,
+        "priority": "HIGH",
+        "dueDate": "2026-10-28",
+        "createdAt": "2026-10-24T12:00:00.000Z",
+        "items": [
+          {
+            "id": "item-12-1",
+            "productId": "rice",
+            "requestedQty": 30
+          }
+        ]
+      },
+      {
+        "id": "order-13",
+        "number": 13,
+        "priority": "MEDIUM",
+        "dueDate": "2026-10-31",
+        "createdAt": "2026-10-25T12:00:00.000Z",
+        "items": [
+          {
+            "id": "item-13-1",
+            "productId": "bread",
+            "requestedQty": 12
+          }
+        ]
+      }
+    ],
+    "lots": [
+      {
+        "id": "milk-today",
+        "productId": "milk",
+        "quantity": 40,
+        "expiryDate": "2026-10-28",
+        "receivedAt": "2026-10-20T12:00:00.000Z"
+      },
+      {
+        "id": "milk-2d",
+        "productId": "milk",
+        "quantity": 5,
+        "expiryDate": "2026-10-30",
+        "receivedAt": "2026-10-20T12:00:00.000Z"
+      },
+      {
+        "id": "milk-6d",
+        "productId": "milk",
+        "quantity": 20,
+        "expiryDate": "2026-11-03",
+        "receivedAt": "2026-10-20T12:00:00.000Z"
+      },
+      {
+        "id": "rice-a",
+        "productId": "rice",
+        "quantity": 40,
+        "expiryDate": "2027-02-25",
+        "receivedAt": "2026-10-20T12:00:00.000Z"
+      },
+      {
+        "id": "rice-b",
+        "productId": "rice",
+        "quantity": 20,
+        "expiryDate": "2027-01-26",
+        "receivedAt": "2026-10-20T12:00:00.000Z"
+      },
+      {
+        "id": "bread-1d",
+        "productId": "bread",
+        "quantity": 8,
+        "expiryDate": "2026-10-29",
+        "receivedAt": "2026-10-20T12:00:00.000Z"
+      }
+    ],
+    "products": [
+      {
+        "id": "milk",
+        "unit": "KG",
+        "avgDailyOut30d": 1
+      },
+      {
+        "id": "rice",
+        "unit": "KG",
+        "avgDailyOut30d": 1
+      },
+      {
+        "id": "bread",
+        "unit": "KG",
+        "avgDailyOut30d": 1
+      }
+    ]
+  },
+  "expected": {
+    "ranking": [
+      {
+        "orderId": "order-12",
+        "number": 12,
+        "rank": 1,
+        "score": 85,
+        "components": {
+          "priority": 0.75,
+          "deadlineUrgency": 1,
+          "expiryPressure": 0
+        },
+        "status": "FULL",
+        "rescores": 0
+      },
+      {
+        "orderId": "order-10",
+        "number": 10,
+        "rank": 2,
+        "score": 84.33,
+        "components": {
+          "priority": 0.25,
+          "deadlineUrgency": 1,
+          "expiryPressure": 0.9333
+        },
+        "status": "FULL",
+        "rescores": 0
+      },
+      {
+        "orderId": "order-13",
+        "number": 13,
+        "rank": 3,
+        "score": 74.67,
+        "components": {
+          "priority": 0.5,
+          "deadlineUrgency": 0.7857,
+          "expiryPressure": 0.9667
+        },
+        "status": "PARTIAL",
+        "rescores": 0
+      },
+      {
+        "orderId": "order-11",
+        "number": 11,
+        "rank": 4,
+        "score": 53,
+        "components": {
+          "priority": 1,
+          "deadlineUrgency": 0.3571,
+          "expiryPressure": 0.8
+        },
+        "status": "FULL",
+        "rescores": 0
+      }
+    ],
+    "lines": [
+      {
+        "orderId": "order-12",
+        "orderItemId": "item-12-1",
+        "productId": "rice",
+        "rank": 1,
+        "score": 85,
+        "requestedQty": 30,
+        "availableQty": 60,
+        "lotId": "rice-b",
+        "recommendedQty": 20,
+        "reasons": [
+          {
+            "code": "PRIORITY_HIGH",
+            "params": {}
+          },
+          {
+            "code": "DUE_IN_DAYS",
+            "params": {
+              "days": 0
+            }
+          },
+          {
+            "code": "EXPIRES_IN_DAYS",
+            "params": {
+              "days": 90
+            }
+          }
+        ]
+      },
+      {
+        "orderId": "order-12",
+        "orderItemId": "item-12-1",
+        "productId": "rice",
+        "rank": 1,
+        "score": 85,
+        "requestedQty": 30,
+        "availableQty": 60,
+        "lotId": "rice-a",
+        "recommendedQty": 10,
+        "reasons": [
+          {
+            "code": "PRIORITY_HIGH",
+            "params": {}
+          },
+          {
+            "code": "DUE_IN_DAYS",
+            "params": {
+              "days": 0
+            }
+          },
+          {
+            "code": "EXPIRES_IN_DAYS",
+            "params": {
+              "days": 120
+            }
+          }
+        ]
+      },
+      {
+        "orderId": "order-10",
+        "orderItemId": "item-10-1",
+        "productId": "milk",
+        "rank": 2,
+        "score": 84.33,
+        "requestedQty": 6,
+        "availableQty": 25,
+        "lotId": "milk-2d",
+        "recommendedQty": 5,
+        "reasons": [
+          {
+            "code": "PRIORITY_LOW",
+            "params": {}
+          },
+          {
+            "code": "OVERDUE",
+            "params": {
+              "days": 2
+            }
+          },
+          {
+            "code": "EXPIRES_IN_DAYS",
+            "params": {
+              "days": 2
+            }
+          }
+        ]
+      },
+      {
+        "orderId": "order-10",
+        "orderItemId": "item-10-1",
+        "productId": "milk",
+        "rank": 2,
+        "score": 84.33,
+        "requestedQty": 6,
+        "availableQty": 25,
+        "lotId": "milk-6d",
+        "recommendedQty": 1,
+        "reasons": [
+          {
+            "code": "PRIORITY_LOW",
+            "params": {}
+          },
+          {
+            "code": "OVERDUE",
+            "params": {
+              "days": 2
+            }
+          },
+          {
+            "code": "EXPIRES_IN_DAYS",
+            "params": {
+              "days": 6
+            }
+          }
+        ]
+      },
+      {
+        "orderId": "order-13",
+        "orderItemId": "item-13-1",
+        "productId": "bread",
+        "rank": 3,
+        "score": 74.67,
+        "requestedQty": 12,
+        "availableQty": 8,
+        "lotId": "bread-1d",
+        "recommendedQty": 8,
+        "reasons": [
+          {
+            "code": "PRIORITY_MEDIUM",
+            "params": {}
+          },
+          {
+            "code": "DUE_IN_DAYS",
+            "params": {
+              "days": 3
+            }
+          },
+          {
+            "code": "EXPIRES_IN_DAYS",
+            "params": {
+              "days": 1
+            }
+          },
+          {
+            "code": "PARTIAL_STOCK",
+            "params": {
+              "requested": 12,
+              "allocated": 8
+            }
+          }
+        ]
+      },
+      {
+        "orderId": "order-11",
+        "orderItemId": "item-11-1",
+        "productId": "milk",
+        "rank": 4,
+        "score": 53,
+        "requestedQty": 4,
+        "availableQty": 19,
+        "lotId": "milk-6d",
+        "recommendedQty": 4,
+        "reasons": [
+          {
+            "code": "PRIORITY_URGENT",
+            "params": {}
+          },
+          {
+            "code": "DUE_IN_DAYS",
+            "params": {
+              "days": 9
+            }
+          },
+          {
+            "code": "EXPIRES_IN_DAYS",
+            "params": {
+              "days": 6
+            }
+          }
+        ]
+      },
+      {
+        "orderId": "order-11",
+        "orderItemId": "item-11-2",
+        "productId": "rice",
+        "rank": 4,
+        "score": 53,
+        "requestedQty": 25.5,
+        "availableQty": 30,
+        "lotId": "rice-a",
+        "recommendedQty": 25.5,
+        "reasons": [
+          {
+            "code": "PRIORITY_URGENT",
+            "params": {}
+          },
+          {
+            "code": "DUE_IN_DAYS",
+            "params": {
+              "days": 9
+            }
+          },
+          {
+            "code": "EXPIRES_IN_DAYS",
+            "params": {
+              "days": 120
+            }
+          }
+        ]
+      }
+    ],
+    "summary": {
+      "strategy": "URGENCY_FIRST",
+      "weights": {
+        "priority": 20,
+        "deadlineUrgency": 70,
+        "expiryPressure": 10
+      },
+      "ordersFull": 3,
+      "ordersPartial": 1,
+      "ordersUnserved": 0,
+      "totalRecommended": {
+        "KG": 73.5
+      },
+      "itemsProcessed": 5,
+      "linesCount": 7,
+      "rescoreCount": 0
+    }
+  }
+}

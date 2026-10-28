@@ -1,0 +1,392 @@
+{
+  "description": "WASTE_FIRST with custom weights 10/30/60 and decimal quantities; ties broken by due date, age and number.",
+  "strategy": "WASTE_FIRST",
+  "weights": {
+    "priority": 10,
+    "deadlineUrgency": 30,
+    "expiryPressure": 60
+  },
+  "snapshot": {
+    "businessDate": "2026-10-28",
+    "orders": [
+      {
+        "id": "order-20",
+        "number": 20,
+        "priority": "MEDIUM",
+        "dueDate": "2026-11-02",
+        "createdAt": "2026-10-25T09:00:00.000Z",
+        "items": [
+          {
+            "id": "item-20-1",
+            "productId": "tomato",
+            "requestedQty": 7.25
+          }
+        ]
+      },
+      {
+        "id": "order-21",
+        "number": 21,
+        "priority": "MEDIUM",
+        "dueDate": "2026-11-02",
+        "createdAt": "2026-10-24T09:00:00.000Z",
+        "items": [
+          {
+            "id": "item-21-1",
+            "productId": "tomato",
+            "requestedQty": 7.25
+          }
+        ]
+      },
+      {
+        "id": "order-22",
+        "number": 22,
+        "priority": "HIGH",
+        "dueDate": "2026-10-30",
+        "createdAt": "2026-10-26T12:00:00.000Z",
+        "items": [
+          {
+            "id": "item-22-1",
+            "productId": "banana",
+            "requestedQty": 3.125
+          },
+          {
+            "id": "item-22-2",
+            "productId": "tomato",
+            "requestedQty": 1.5
+          }
+        ]
+      },
+      {
+        "id": "order-23",
+        "number": 23,
+        "priority": "URGENT",
+        "dueDate": "2026-11-11",
+        "createdAt": "2026-10-27T12:00:00.000Z",
+        "items": [
+          {
+            "id": "item-23-1",
+            "productId": "cheese",
+            "requestedQty": 2
+          }
+        ]
+      }
+    ],
+    "lots": [
+      {
+        "id": "tomato-3d",
+        "productId": "tomato",
+        "quantity": 9.5,
+        "expiryDate": "2026-10-31",
+        "receivedAt": "2026-10-20T12:00:00.000Z"
+      },
+      {
+        "id": "tomato-10d",
+        "productId": "tomato",
+        "quantity": 4.75,
+        "expiryDate": "2026-11-07",
+        "receivedAt": "2026-10-20T12:00:00.000Z"
+      },
+      {
+        "id": "banana-2d",
+        "productId": "banana",
+        "quantity": 3,
+        "expiryDate": "2026-10-30",
+        "receivedAt": "2026-10-20T12:00:00.000Z"
+      },
+      {
+        "id": "cheese-40d",
+        "productId": "cheese",
+        "quantity": 10,
+        "expiryDate": "2026-12-07",
+        "receivedAt": "2026-10-20T12:00:00.000Z"
+      }
+    ],
+    "products": [
+      {
+        "id": "tomato",
+        "unit": "KG",
+        "avgDailyOut30d": 1
+      },
+      {
+        "id": "banana",
+        "unit": "KG",
+        "avgDailyOut30d": 1
+      },
+      {
+        "id": "cheese",
+        "unit": "KG",
+        "avgDailyOut30d": 1
+      }
+    ]
+  },
+  "expected": {
+    "ranking": [
+      {
+        "orderId": "order-22",
+        "number": 22,
+        "rank": 1,
+        "score": 89.21,
+        "components": {
+          "priority": 0.75,
+          "deadlineUrgency": 0.8571,
+          "expiryPressure": 0.9333
+        },
+        "status": "PARTIAL",
+        "rescores": 0
+      },
+      {
+        "orderId": "order-21",
+        "number": 21,
+        "rank": 2,
+        "score": 78.29,
+        "components": {
+          "priority": 0.5,
+          "deadlineUrgency": 0.6429,
+          "expiryPressure": 0.9
+        },
+        "status": "FULL",
+        "rescores": 0
+      },
+      {
+        "orderId": "order-20",
+        "number": 20,
+        "rank": 3,
+        "score": 78.29,
+        "components": {
+          "priority": 0.5,
+          "deadlineUrgency": 0.6429,
+          "expiryPressure": 0.9
+        },
+        "status": "PARTIAL",
+        "rescores": 0
+      },
+      {
+        "orderId": "order-23",
+        "number": 23,
+        "rank": 4,
+        "score": 10,
+        "components": {
+          "priority": 1,
+          "deadlineUrgency": 0,
+          "expiryPressure": 0
+        },
+        "status": "FULL",
+        "rescores": 0
+      }
+    ],
+    "lines": [
+      {
+        "orderId": "order-22",
+        "orderItemId": "item-22-1",
+        "productId": "banana",
+        "rank": 1,
+        "score": 89.21,
+        "requestedQty": 3.125,
+        "availableQty": 3,
+        "lotId": "banana-2d",
+        "recommendedQty": 3,
+        "reasons": [
+          {
+            "code": "PRIORITY_HIGH",
+            "params": {}
+          },
+          {
+            "code": "DUE_IN_DAYS",
+            "params": {
+              "days": 2
+            }
+          },
+          {
+            "code": "EXPIRES_IN_DAYS",
+            "params": {
+              "days": 2
+            }
+          },
+          {
+            "code": "PARTIAL_STOCK",
+            "params": {
+              "requested": 3.125,
+              "allocated": 3
+            }
+          }
+        ]
+      },
+      {
+        "orderId": "order-22",
+        "orderItemId": "item-22-2",
+        "productId": "tomato",
+        "rank": 1,
+        "score": 89.21,
+        "requestedQty": 1.5,
+        "availableQty": 14.25,
+        "lotId": "tomato-3d",
+        "recommendedQty": 1.5,
+        "reasons": [
+          {
+            "code": "PRIORITY_HIGH",
+            "params": {}
+          },
+          {
+            "code": "DUE_IN_DAYS",
+            "params": {
+              "days": 2
+            }
+          },
+          {
+            "code": "EXPIRES_IN_DAYS",
+            "params": {
+              "days": 3
+            }
+          }
+        ]
+      },
+      {
+        "orderId": "order-21",
+        "orderItemId": "item-21-1",
+        "productId": "tomato",
+        "rank": 2,
+        "score": 78.29,
+        "requestedQty": 7.25,
+        "availableQty": 12.75,
+        "lotId": "tomato-3d",
+        "recommendedQty": 7.25,
+        "reasons": [
+          {
+            "code": "PRIORITY_MEDIUM",
+            "params": {}
+          },
+          {
+            "code": "DUE_IN_DAYS",
+            "params": {
+              "days": 5
+            }
+          },
+          {
+            "code": "EXPIRES_IN_DAYS",
+            "params": {
+              "days": 3
+            }
+          }
+        ]
+      },
+      {
+        "orderId": "order-20",
+        "orderItemId": "item-20-1",
+        "productId": "tomato",
+        "rank": 3,
+        "score": 78.29,
+        "requestedQty": 7.25,
+        "availableQty": 5.5,
+        "lotId": "tomato-3d",
+        "recommendedQty": 0.75,
+        "reasons": [
+          {
+            "code": "PRIORITY_MEDIUM",
+            "params": {}
+          },
+          {
+            "code": "DUE_IN_DAYS",
+            "params": {
+              "days": 5
+            }
+          },
+          {
+            "code": "EXPIRES_IN_DAYS",
+            "params": {
+              "days": 3
+            }
+          },
+          {
+            "code": "PARTIAL_STOCK",
+            "params": {
+              "requested": 7.25,
+              "allocated": 5.5
+            }
+          }
+        ]
+      },
+      {
+        "orderId": "order-20",
+        "orderItemId": "item-20-1",
+        "productId": "tomato",
+        "rank": 3,
+        "score": 78.29,
+        "requestedQty": 7.25,
+        "availableQty": 5.5,
+        "lotId": "tomato-10d",
+        "recommendedQty": 4.75,
+        "reasons": [
+          {
+            "code": "PRIORITY_MEDIUM",
+            "params": {}
+          },
+          {
+            "code": "DUE_IN_DAYS",
+            "params": {
+              "days": 5
+            }
+          },
+          {
+            "code": "EXPIRES_IN_DAYS",
+            "params": {
+              "days": 10
+            }
+          },
+          {
+            "code": "PARTIAL_STOCK",
+            "params": {
+              "requested": 7.25,
+              "allocated": 5.5
+            }
+          }
+        ]
+      },
+      {
+        "orderId": "order-23",
+        "orderItemId": "item-23-1",
+        "productId": "cheese",
+        "rank": 4,
+        "score": 10,
+        "requestedQty": 2,
+        "availableQty": 10,
+        "lotId": "cheese-40d",
+        "recommendedQty": 2,
+        "reasons": [
+          {
+            "code": "PRIORITY_URGENT",
+            "params": {}
+          },
+          {
+            "code": "DUE_IN_DAYS",
+            "params": {
+              "days": 14
+            }
+          },
+          {
+            "code": "EXPIRES_IN_DAYS",
+            "params": {
+              "days": 40
+            }
+          }
+        ]
+      }
+    ],
+    "summary": {
+      "strategy": "WASTE_FIRST",
+      "weights": {
+        "priority": 10,
+        "deadlineUrgency": 30,
+        "expiryPressure": 60
+      },
+      "ordersFull": 2,
+      "ordersPartial": 2,
+      "ordersUnserved": 0,
+      "totalRecommended": {
+        "KG": 19.25
+      },
+      "itemsProcessed": 5,
+      "linesCount": 6,
+      "rescoreCount": 0
+    }
+  }
+}

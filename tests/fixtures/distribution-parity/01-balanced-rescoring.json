@@ -1,0 +1,344 @@
+{
+  "description": "BALANCED: lazy re-scoring moves order 2 behind order 3; partial stock and NO_STOCK lines.",
+  "strategy": "BALANCED",
+  "snapshot": {
+    "businessDate": "2026-10-28",
+    "orders": [
+      {
+        "id": "order-1",
+        "number": 1,
+        "priority": "URGENT",
+        "dueDate": "2026-10-28",
+        "createdAt": "2026-10-21T12:00:00.000Z",
+        "items": [
+          {
+            "id": "item-1-1",
+            "productId": "x",
+            "requestedQty": 10
+          }
+        ]
+      },
+      {
+        "id": "order-2",
+        "number": 2,
+        "priority": "MEDIUM",
+        "dueDate": "2026-11-04",
+        "createdAt": "2026-10-22T12:00:00.000Z",
+        "items": [
+          {
+            "id": "item-2-1",
+            "productId": "x",
+            "requestedQty": 5
+          },
+          {
+            "id": "item-2-2",
+            "productId": "z",
+            "requestedQty": 2
+          }
+        ]
+      },
+      {
+        "id": "order-3",
+        "number": 3,
+        "priority": "MEDIUM",
+        "dueDate": "2026-11-04",
+        "createdAt": "2026-10-23T12:00:00.000Z",
+        "items": [
+          {
+            "id": "item-3-1",
+            "productId": "y",
+            "requestedQty": 5
+          }
+        ]
+      },
+      {
+        "id": "order-4",
+        "number": 4,
+        "priority": "LOW",
+        "dueDate": "2026-11-09",
+        "createdAt": "2026-10-24T12:00:00.000Z",
+        "items": [
+          {
+            "id": "item-4-1",
+            "productId": "y",
+            "requestedQty": 60
+          }
+        ]
+      }
+    ],
+    "lots": [
+      {
+        "id": "x-soon",
+        "productId": "x",
+        "quantity": 10,
+        "expiryDate": "2026-10-29",
+        "receivedAt": "2026-10-20T12:00:00.000Z"
+      },
+      {
+        "id": "x-later",
+        "productId": "x",
+        "quantity": 3,
+        "expiryDate": "2026-11-26",
+        "receivedAt": "2026-10-20T12:00:00.000Z"
+      },
+      {
+        "id": "y-mid",
+        "productId": "y",
+        "quantity": 50,
+        "expiryDate": "2026-11-12",
+        "receivedAt": "2026-10-20T12:00:00.000Z"
+      }
+    ],
+    "products": [
+      {
+        "id": "x",
+        "unit": "KG",
+        "avgDailyOut30d": 1
+      },
+      {
+        "id": "y",
+        "unit": "KG",
+        "avgDailyOut30d": 1
+      },
+      {
+        "id": "z",
+        "unit": "KG",
+        "avgDailyOut30d": 1
+      }
+    ]
+  },
+  "expected": {
+    "ranking": [
+      {
+        "orderId": "order-1",
+        "number": 1,
+        "rank": 1,
+        "score": 99.17,
+        "components": {
+          "priority": 1,
+          "deadlineUrgency": 1,
+          "expiryPressure": 0.9667
+        },
+        "status": "FULL",
+        "rescores": 0
+      },
+      {
+        "orderId": "order-3",
+        "number": 3,
+        "rank": 2,
+        "score": 50,
+        "components": {
+          "priority": 0.5,
+          "deadlineUrgency": 0.5,
+          "expiryPressure": 0.5
+        },
+        "status": "FULL",
+        "rescores": 0
+      },
+      {
+        "orderId": "order-2",
+        "number": 2,
+        "rank": 3,
+        "score": 38.33,
+        "components": {
+          "priority": 0.5,
+          "deadlineUrgency": 0.5,
+          "expiryPressure": 0.0333
+        },
+        "status": "PARTIAL",
+        "rescores": 1
+      },
+      {
+        "orderId": "order-4",
+        "number": 4,
+        "rank": 4,
+        "score": 27.5,
+        "components": {
+          "priority": 0.25,
+          "deadlineUrgency": 0.1429,
+          "expiryPressure": 0.5
+        },
+        "status": "PARTIAL",
+        "rescores": 0
+      }
+    ],
+    "lines": [
+      {
+        "orderId": "order-1",
+        "orderItemId": "item-1-1",
+        "productId": "x",
+        "rank": 1,
+        "score": 99.17,
+        "requestedQty": 10,
+        "availableQty": 13,
+        "lotId": "x-soon",
+        "recommendedQty": 10,
+        "reasons": [
+          {
+            "code": "PRIORITY_URGENT",
+            "params": {}
+          },
+          {
+            "code": "DUE_IN_DAYS",
+            "params": {
+              "days": 0
+            }
+          },
+          {
+            "code": "EXPIRES_IN_DAYS",
+            "params": {
+              "days": 1
+            }
+          }
+        ]
+      },
+      {
+        "orderId": "order-3",
+        "orderItemId": "item-3-1",
+        "productId": "y",
+        "rank": 2,
+        "score": 50,
+        "requestedQty": 5,
+        "availableQty": 50,
+        "lotId": "y-mid",
+        "recommendedQty": 5,
+        "reasons": [
+          {
+            "code": "PRIORITY_MEDIUM",
+            "params": {}
+          },
+          {
+            "code": "DUE_IN_DAYS",
+            "params": {
+              "days": 7
+            }
+          },
+          {
+            "code": "EXPIRES_IN_DAYS",
+            "params": {
+              "days": 15
+            }
+          }
+        ]
+      },
+      {
+        "orderId": "order-2",
+        "orderItemId": "item-2-1",
+        "productId": "x",
+        "rank": 3,
+        "score": 38.33,
+        "requestedQty": 5,
+        "availableQty": 3,
+        "lotId": "x-later",
+        "recommendedQty": 3,
+        "reasons": [
+          {
+            "code": "PRIORITY_MEDIUM",
+            "params": {}
+          },
+          {
+            "code": "DUE_IN_DAYS",
+            "params": {
+              "days": 7
+            }
+          },
+          {
+            "code": "EXPIRES_IN_DAYS",
+            "params": {
+              "days": 29
+            }
+          },
+          {
+            "code": "PARTIAL_STOCK",
+            "params": {
+              "requested": 5,
+              "allocated": 3
+            }
+          }
+        ]
+      },
+      {
+        "orderId": "order-2",
+        "orderItemId": "item-2-2",
+        "productId": "z",
+        "rank": 3,
+        "score": 38.33,
+        "requestedQty": 2,
+        "availableQty": 0,
+        "lotId": null,
+        "recommendedQty": 0,
+        "reasons": [
+          {
+            "code": "PRIORITY_MEDIUM",
+            "params": {}
+          },
+          {
+            "code": "DUE_IN_DAYS",
+            "params": {
+              "days": 7
+            }
+          },
+          {
+            "code": "NO_STOCK",
+            "params": {
+              "requested": 2
+            }
+          }
+        ]
+      },
+      {
+        "orderId": "order-4",
+        "orderItemId": "item-4-1",
+        "productId": "y",
+        "rank": 4,
+        "score": 27.5,
+        "requestedQty": 60,
+        "availableQty": 45,
+        "lotId": "y-mid",
+        "recommendedQty": 45,
+        "reasons": [
+          {
+            "code": "PRIORITY_LOW",
+            "params": {}
+          },
+          {
+            "code": "DUE_IN_DAYS",
+            "params": {
+              "days": 12
+            }
+          },
+          {
+            "code": "EXPIRES_IN_DAYS",
+            "params": {
+              "days": 15
+            }
+          },
+          {
+            "code": "PARTIAL_STOCK",
+            "params": {
+              "requested": 60,
+              "allocated": 45
+            }
+          }
+        ]
+      }
+    ],
+    "summary": {
+      "strategy": "BALANCED",
+      "weights": {
+        "priority": 40,
+        "deadlineUrgency": 35,
+        "expiryPressure": 25
+      },
+      "ordersFull": 2,
+      "ordersPartial": 2,
+      "ordersUnserved": 0,
+      "totalRecommended": {
+        "KG": 63
+      },
+      "itemsProcessed": 5,
+      "linesCount": 5,
+      "rescoreCount": 1
+    }
+  }
+}

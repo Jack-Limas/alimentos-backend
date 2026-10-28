@@ -50,6 +50,13 @@ import {
   type DistributionRepository,
 } from './modules/distribution/index.js';
 import {
+  createApiMetrics,
+  createMetricsController,
+  createMetricsService,
+  createWebVitalsStore,
+  metricsRoutes,
+} from './modules/metrics/index.js';
+import {
   createHealthController,
   createHealthService,
   createPrismaDatabaseCheck,
@@ -79,6 +86,7 @@ import {
   type ProductRepository,
 } from './modules/products/index.js';
 import { createPrismaUserRepository, type UserRepository } from './modules/users/index.js';
+import apiMetricsPlugin from './plugins/api-metrics.js';
 import auth from './plugins/auth.js';
 import errorHandler from './plugins/error-handler.js';
 import security from './plugins/security.js';
@@ -162,6 +170,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(sensible);
   await app.register(errorHandler, { isProduction: env.NODE_ENV === 'production' });
   await app.register(serverTiming);
+  // Response times per route pattern for GET /metrics/api (in memory, per process).
+  const apiMetrics = createApiMetrics();
+  await app.register(apiMetricsPlugin, { metrics: apiMetrics });
   await app.register(security, { corsOrigins: env.CORS_ORIGINS });
   await app.register(auth, {
     jwtAccessSecret: env.JWT_ACCESS_SECRET,
@@ -293,6 +304,18 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(alertsRoutes, {
     prefix: `${API_PREFIX}/alerts`,
     controller: createAlertsController(alertsService),
+  });
+  const metricsService = createMetricsService({
+    apiMetrics,
+    webVitals: createWebVitalsStore(),
+  });
+  app.addHook('onClose', (_instance, done) => {
+    metricsService.close();
+    done();
+  });
+  await app.register(metricsRoutes, {
+    prefix: `${API_PREFIX}/metrics`,
+    controller: createMetricsController(metricsService),
   });
   await app.register(aiRoutes, {
     prefix: `${API_PREFIX}/ai`,

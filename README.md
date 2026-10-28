@@ -55,34 +55,39 @@ Capas del backend: `route → controller → service → repository (Prisma)`.
 
 ## Endpoints disponibles
 
-| Método | Ruta                          | Respuesta                                                                                                |
-| ------ | ----------------------------- | -------------------------------------------------------------------------------------------------------- |
-| GET    | `/health`                     | `{ status: "ok", service, version, uptimeSec }` (sin BD; Render)                                         |
-| GET    | `/api/v1/health`              | Igual que `/health`                                                                                      |
-| GET    | `/api/v1/health/ready`        | `{ status: "ok", db: "up" }` o 503 `{ status: "degraded", db: "down" }`                                  |
-| POST   | `/api/v1/auth/login`          | `{ accessToken, user }` + cookie `refresh_token`                                                         |
-| POST   | `/api/v1/auth/refresh`        | `{ accessToken }` + cookie rotada                                                                        |
-| POST   | `/api/v1/auth/logout`         | 204 y cookie borrada                                                                                     |
-| GET    | `/api/v1/auth/me`             | `{ data: { id, email, name, role } }` (Bearer)                                                           |
-| GET    | `/api/v1/audit-logs`          | Lista paginada; solo `ADMIN`; filtros `action`, `userId`, `from`, `to`                                   |
-| GET    | `/api/v1/products`            | Lista paginada con métricas; filtros `search`, `category`, `status`, `stockStatus`, `expiringWithinDays` |
-| GET    | `/api/v1/products/:id`        | `{ data }` con métricas y `lots[]` en orden FEFO                                                         |
-| POST   | `/api/v1/products`            | Solo `ADMIN`; 201; nombre repetido → 409 `DUPLICATE`                                                     |
-| PATCH  | `/api/v1/products/:id`        | Solo `ADMIN`; campos editables y `status` (no hay borrado físico)                                        |
-| GET    | `/api/v1/inventory/lots`      | Lotes con stock; filtros `productId`, `expiringWithinDays`, `includeExpired`                             |
-| POST   | `/api/v1/inventory/entries`   | Solo `ADMIN`; lote + movimiento `ENTRY` + auditoría (una transacción)                                    |
-| POST   | `/api/v1/inventory/exits`     | Solo `ADMIN`; `EXIT_WASTE` o `ADJUSTMENT`, con `lotId` o FEFO; 409 si no alcanza                         |
-| GET    | `/api/v1/inventory/movements` | Solo `ADMIN`; filtros `productId`, `type`, `from`, `to`                                                  |
-| GET    | `/api/v1/inventory/summary`   | `{ data: { totalProducts, lowStock, outOfStock, expiringSoon, wasteRiskHigh } }`                         |
-| GET    | `/api/v1/customers`           | Solo `ADMIN`; lista paginada; filtros `search`, `type`, `status`                                         |
-| GET    | `/api/v1/customers/:id`       | Solo `ADMIN`; `{ data }`                                                                                 |
-| POST   | `/api/v1/customers`           | Solo `ADMIN`; 201                                                                                        |
-| PATCH  | `/api/v1/customers/:id`       | Solo `ADMIN`; incluye `status` (no hay borrado físico)                                                   |
-| GET    | `/api/v1/orders`              | Lista paginada; filtros `status` (varios), `priority`, `customerId`, `dueBefore`                         |
-| GET    | `/api/v1/orders/:id`          | `{ data }` con `items[]`, cliente e `history[]`                                                          |
-| POST   | `/api/v1/orders`              | Solo `ADMIN`; 201; pedido + ítems + historial + auditoría en una transacción; no reserva stock           |
-| PATCH  | `/api/v1/orders/:id/status`   | Máquina de estados; cancelar solo `ADMIN` (con `RETURN` a los lotes); 409 si no aplica                   |
-| GET    | `/api/v1/alerts`              | `{ data: Alert[] }` calculadas al vuelo, de la más grave a la menos grave                                |
+| Método | Ruta                                         | Respuesta                                                                                                |
+| ------ | -------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| GET    | `/health`                                    | `{ status: "ok", service, version, uptimeSec }` (sin BD; Render)                                         |
+| GET    | `/api/v1/health`                             | Igual que `/health`                                                                                      |
+| GET    | `/api/v1/health/ready`                       | `{ status: "ok", db: "up" }` o 503 `{ status: "degraded", db: "down" }`                                  |
+| POST   | `/api/v1/auth/login`                         | `{ accessToken, user }` + cookie `refresh_token`                                                         |
+| POST   | `/api/v1/auth/refresh`                       | `{ accessToken }` + cookie rotada                                                                        |
+| POST   | `/api/v1/auth/logout`                        | 204 y cookie borrada                                                                                     |
+| GET    | `/api/v1/auth/me`                            | `{ data: { id, email, name, role } }` (Bearer)                                                           |
+| GET    | `/api/v1/audit-logs`                         | Lista paginada; solo `ADMIN`; filtros `action`, `userId`, `from`, `to`                                   |
+| GET    | `/api/v1/products`                           | Lista paginada con métricas; filtros `search`, `category`, `status`, `stockStatus`, `expiringWithinDays` |
+| GET    | `/api/v1/products/:id`                       | `{ data }` con métricas y `lots[]` en orden FEFO                                                         |
+| POST   | `/api/v1/products`                           | Solo `ADMIN`; 201; nombre repetido → 409 `DUPLICATE`                                                     |
+| PATCH  | `/api/v1/products/:id`                       | Solo `ADMIN`; campos editables y `status` (no hay borrado físico)                                        |
+| GET    | `/api/v1/inventory/lots`                     | Lotes con stock; filtros `productId`, `expiringWithinDays`, `includeExpired`                             |
+| POST   | `/api/v1/inventory/entries`                  | Solo `ADMIN`; lote + movimiento `ENTRY` + auditoría (una transacción)                                    |
+| POST   | `/api/v1/inventory/exits`                    | Solo `ADMIN`; `EXIT_WASTE` o `ADJUSTMENT`, con `lotId` o FEFO; 409 si no alcanza                         |
+| GET    | `/api/v1/inventory/movements`                | Solo `ADMIN`; filtros `productId`, `type`, `from`, `to`                                                  |
+| GET    | `/api/v1/inventory/summary`                  | `{ data: { totalProducts, lowStock, outOfStock, expiringSoon, wasteRiskHigh } }`                         |
+| GET    | `/api/v1/customers`                          | Solo `ADMIN`; lista paginada; filtros `search`, `type`, `status`                                         |
+| GET    | `/api/v1/customers/:id`                      | Solo `ADMIN`; `{ data }`                                                                                 |
+| POST   | `/api/v1/customers`                          | Solo `ADMIN`; 201                                                                                        |
+| PATCH  | `/api/v1/customers/:id`                      | Solo `ADMIN`; incluye `status` (no hay borrado físico)                                                   |
+| GET    | `/api/v1/orders`                             | Lista paginada; filtros `status` (varios), `priority`, `customerId`, `dueBefore`                         |
+| GET    | `/api/v1/orders/:id`                         | `{ data }` con `items[]`, cliente e `history[]`                                                          |
+| POST   | `/api/v1/orders`                             | Solo `ADMIN`; 201; pedido + ítems + historial + auditoría en una transacción; no reserva stock           |
+| PATCH  | `/api/v1/orders/:id/status`                  | Máquina de estados; cancelar solo `ADMIN` (con `RETURN` a los lotes); 409 si no aplica                   |
+| GET    | `/api/v1/alerts`                             | `{ data: Alert[] }` calculadas al vuelo, de la más grave a la menos grave                                |
+| GET    | `/api/v1/distribution/snapshot`              | Pedidos `PENDING`, lotes despachables, salida 30 días, pesos y reglas (para el Web Worker)               |
+| POST   | `/api/v1/distribution/proposals`             | `{ strategy, weights? }` → el servidor calcula y guarda la propuesta `DRAFT`                             |
+| GET    | `/api/v1/distribution/proposals[/:id]`       | Listado paginado; detalle con líneas agrupadas por pedido                                                |
+| POST   | `/api/v1/distribution/proposals/:id/confirm` | Una transacción: descuenta FEFO, `EXIT_DISPATCH`, pedidos a `IN_PREPARATION`; 409 `STALE_PROPOSAL`       |
+| POST   | `/api/v1/distribution/proposals/:id/discard` | Solo `DRAFT`                                                                                             |
 
 Todas las respuestas incluyen `Server-Timing: app;dur=<ms>`. Los errores siguen el formato
 `{ "error": { "code", "message", "details" } }`.
@@ -326,6 +331,36 @@ Los dos resultados se combinan en un `Map<productId, …>`. Los filtros `stockSt
 - **Alertas** (`src/modules/alerts/domain/alerts.ts`): `buildAlerts` es puro y reutiliza
   `productMetrics` e `INVENTORY_RULES`. El servicio hace cuatro consultas agregadas (stock por
   vencimiento, salidas, demanda pendiente con `groupBy` y pedidos próximos) y las une con un `Map`.
+
+## Motor de distribución
+
+- **Dominio puro** en `src/modules/distribution/domain/`: `MinHeap<T>` propio, `scoreOrder`,
+  estrategias (`BalancedStrategy` 40/35/25, `UrgencyFirstStrategy` 20/70/10,
+  `WasteFirstStrategy` 20/20/60, o pesos propios que sumen 100) y `buildProposal`.
+- **Heap y re-puntuación perezosa**: cuando un pedido llega arriba se vuelve a puntuar con el
+  stock que queda. Si otro pedido se llevó el lote que vencía primero, su presión de vencimiento
+  baja y vuelve al heap (máx. 3 veces). Con un heap eso cuesta O(log n) por reinserción; con un
+  arreglo ordenado habría que reordenar cada vez.
+- **Lotes despachables**: vencen mañana o después. Lo que vence hoy no sale en un despacho.
+- **Confirmación atómica**: estado `DRAFT` condicional, decrementos condicionales por lote,
+  pedidos `PENDING` condicionales, movimientos, `allocatedQty`, historial y auditoría en una
+  transacción. Cualquier cambio intermedio (otra salida, una cancelación, otra propuesta
+  confirmada) da 409 `STALE_PROPOSAL` y no deja nada a medias.
+
+### Fixtures de paridad (para el frontend)
+
+`tests/fixtures/distribution-parity/*.json` tiene casos con `snapshot` de entrada y `expected`
+(`ranking`, `lines`, `summary` sin `processingMs`), uno por estrategia:
+
+| Archivo                                | Qué cubre                                                             |
+| -------------------------------------- | --------------------------------------------------------------------- |
+| `01-balanced-rescoring.json`           | Re-puntuación perezosa, stock parcial y `NO_STOCK`                    |
+| `02-urgency-first-expiring-today.json` | Pedido vencido primero, lote que vence hoy excluido, FEFO entre lotes |
+| `03-waste-first-custom-weights.json`   | Pesos propios 10/30/60, decimales y desempates                        |
+
+El frontend **copia** estos archivos (los repos no comparten código) y ejecuta su copia del motor
+en el Web Worker con `now = () => 0`: el resultado debe ser idéntico. Si cambia el algoritmo, se
+regeneran aquí, se revisan a mano y se vuelven a copiar al frontend.
 
 ## CI
 

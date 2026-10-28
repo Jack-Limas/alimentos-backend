@@ -1,10 +1,11 @@
-import type { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import { auditLogData, toDecimalInput } from '../../shared/db/prisma-helpers.js';
 import { fromDbDate, fromMilli, toMilli } from '../inventory/domain/index.js';
 import type { DistributionReason, Weights } from './domain/index.js';
 import {
   StaleProposalError,
   type DistributionRepository,
+  type ProposalAiInsight,
   type ProposalLineRecord,
   type ProposalRecord,
   type StoredSummary,
@@ -17,6 +18,7 @@ function toRecord(row: ProposalRow): ProposalRecord {
     ...row,
     weights: row.weights as unknown as Weights,
     summary: row.summary as unknown as StoredSummary,
+    aiInsight: row.aiInsight as unknown as ProposalAiInsight | null,
   };
 }
 
@@ -29,7 +31,7 @@ const LINE_INCLUDE = {
       priority: true,
       status: true,
       dueDate: true,
-      customer: { select: { name: true } },
+      customer: { select: { name: true, type: true } },
     },
   },
   product: { select: { name: true, unit: true } },
@@ -43,7 +45,7 @@ function toLine({ order, reasons, proposalId: _proposalId, ...line }: LineRow): 
   return {
     ...line,
     reasons: reasons as unknown as DistributionReason[],
-    order: { ...orderFields, customerName: customer.name },
+    order: { ...orderFields, customerName: customer.name, customerType: customer.type },
   };
 }
 
@@ -59,7 +61,7 @@ export function createPrismaDistributionRepository(prisma: PrismaClient): Distri
             priority: true,
             dueDate: true,
             createdAt: true,
-            customer: { select: { name: true } },
+            customer: { select: { name: true, type: true } },
             items: {
               select: { id: true, productId: true, requestedQty: true },
               orderBy: { id: 'asc' },
@@ -91,6 +93,7 @@ export function createPrismaDistributionRepository(prisma: PrismaClient): Distri
           dueDate: fromDbDate(order.dueDate),
           createdAt: order.createdAt.toISOString(),
           customerName: customer.name,
+          customerType: customer.type,
           items: items.map((item) => ({
             id: item.id,
             productId: item.productId,
@@ -111,7 +114,12 @@ export function createPrismaDistributionRepository(prisma: PrismaClient): Distri
     async createProposal({ lines, audit, ...proposal }) {
       const [created] = await prisma.$transaction([
         prisma.distributionProposal.create({
-          data: { ...proposal, weights: json(proposal.weights), summary: json(proposal.summary) },
+          data: {
+            ...proposal,
+            weights: json(proposal.weights),
+            summary: json(proposal.summary),
+            aiInsight: proposal.aiInsight === null ? Prisma.DbNull : json(proposal.aiInsight),
+          },
         }),
         prisma.proposalLine.createMany({
           data: lines.map((line) => ({
@@ -235,6 +243,14 @@ export function createPrismaDistributionRepository(prisma: PrismaClient): Distri
         await tx.auditLog.create({ data: auditLogData(audit) });
         return true;
       });
+    },
+
+    async saveAiInsight(id, insight) {
+      const { count } = await prisma.distributionProposal.updateMany({
+        where: { id },
+        data: { aiInsight: json(insight) },
+      });
+      return count === 1;
     },
   };
 }

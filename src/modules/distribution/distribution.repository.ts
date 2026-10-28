@@ -1,4 +1,5 @@
 import type {
+  CustomerType,
   OrderPriority,
   OrderStatus,
   Prisma,
@@ -19,6 +20,8 @@ import type {
 /** A PENDING order as the snapshot shows it: engine fields plus what the UI displays. */
 export interface SnapshotOrderRow extends SnapshotOrder {
   customerName: string;
+  /** What the AI receives instead of the customer's name (data minimization). */
+  customerType: CustomerType;
 }
 
 export interface SnapshotProductRow {
@@ -36,6 +39,18 @@ export interface SnapshotRows {
 /** Stored summary: the engine summary plus the ranking of every order. */
 export type StoredSummary = ProposalSummary & { ranking: RankedOrder[] };
 
+/** AI explanation of a plan, stored in aiInsight (never personal data). */
+export interface ProposalAiInsight {
+  summary: string;
+  highlights: string[];
+  tieBreakOrder?: string[];
+  locale: 'es' | 'en';
+  model: string;
+  promptVersion?: string;
+  latencyMs: number;
+  generatedAt: string;
+}
+
 export interface ProposalRecord {
   id: string;
   strategy: Strategy;
@@ -47,6 +62,7 @@ export interface ProposalRecord {
   itemsProcessed: number;
   degraded: boolean;
   summary: StoredSummary;
+  aiInsight: ProposalAiInsight | null;
   createdById: string;
   confirmedById: string | null;
   confirmedAt: Date | null;
@@ -71,6 +87,7 @@ export interface ProposalLineRecord {
     status: OrderStatus;
     dueDate: Date;
     customerName: string;
+    customerType: CustomerType;
   };
   product: { name: string; unit: Unit };
   lot: { lotCode: string | null; expiryDate: Date } | null;
@@ -102,7 +119,10 @@ export interface NewProposal {
   businessDate: Date;
   processingMs: number;
   itemsProcessed: number;
+  /** AI_ASSISTED fell back to the rules result (the AI failed). */
+  degraded: boolean;
   summary: StoredSummary;
+  aiInsight: ProposalAiInsight | null;
   createdById: string;
   lines: NewProposalLine[];
   audit: NewAuditLog;
@@ -169,4 +189,6 @@ export interface DistributionRepository {
   confirm(input: ConfirmProposal): Promise<void>;
   /** DRAFT → DISCARDED with its audit row; false when it was not DRAFT. */
   discard(id: string, audit: NewAuditLog): Promise<boolean>;
+  /** Stores (or replaces) the AI explanation; false when the proposal does not exist. */
+  saveAiInsight(id: string, insight: ProposalAiInsight): Promise<boolean>;
 }

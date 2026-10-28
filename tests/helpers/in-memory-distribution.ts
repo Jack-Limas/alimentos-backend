@@ -52,6 +52,7 @@ export function createInMemoryDistributionRepository(
         dueDate: fromDbDate(order.dueDate),
         createdAt: order.createdAt.toISOString(),
         customerName: deps.customers.get(order.customerId)?.name ?? '',
+        customerType: deps.customers.get(order.customerId)?.type ?? 'SUPERMARKET',
         items: deps.orders.items
           .filter((item) => item.orderId === order.id)
           .sort((a, b) => (a.id < b.id ? -1 : 1))
@@ -85,7 +86,6 @@ export function createInMemoryDistributionRepository(
       const record: ProposalDetailRecord = {
         ...proposal,
         status: 'DRAFT',
-        degraded: false,
         confirmedById: null,
         confirmedAt: null,
         createdAt: new Date(),
@@ -105,6 +105,7 @@ export function createInMemoryDistributionRepository(
               status: order?.status ?? 'PENDING',
               dueDate: order?.dueDate ?? new Date(0),
               customerName: deps.customers.get(order?.customerId ?? '')?.name ?? '',
+              customerType: deps.customers.get(order?.customerId ?? '')?.type ?? 'SUPERMARKET',
             },
             product: { name: product?.name ?? '', unit: product?.unit ?? 'KG' },
             lot: lot ? { lotCode: lot.lotCode, expiryDate: lot.expiryDate } : null,
@@ -208,6 +209,13 @@ export function createInMemoryDistributionRepository(
       proposals.set(id, { ...proposal, status: 'DISCARDED' });
       await audit.create(entry);
       return true;
+    },
+
+    saveAiInsight(id, insight) {
+      const proposal = proposals.get(id);
+      if (!proposal) return Promise.resolve(false);
+      proposals.set(id, { ...proposal, aiInsight: insight });
+      return Promise.resolve(true);
     },
   };
   return repository;

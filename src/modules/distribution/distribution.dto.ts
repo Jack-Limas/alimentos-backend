@@ -1,4 +1,11 @@
-import type { OrderPriority, OrderStatus, ProposalStatus, Strategy, Unit } from '@prisma/client';
+import type {
+  CustomerType,
+  OrderPriority,
+  OrderStatus,
+  ProposalStatus,
+  Strategy,
+  Unit,
+} from '@prisma/client';
 import { fromDbDate, type CalendarDate } from '../inventory/domain/index.js';
 import { formatOrderCode } from '../orders/domain/index.js';
 import type {
@@ -8,7 +15,11 @@ import type {
   ScoreComponents,
   Weights,
 } from './domain/index.js';
-import type { ProposalDetailRecord, ProposalRecord } from './distribution.repository.js';
+import type {
+  ProposalAiInsight,
+  ProposalDetailRecord,
+  ProposalRecord,
+} from './distribution.repository.js';
 
 export interface ProposalDto {
   id: string;
@@ -20,6 +31,8 @@ export interface ProposalDto {
   itemsProcessed: number;
   degraded: boolean;
   summary: ProposalSummary;
+  /** AI explanation of the plan, once generated (POST /ai/proposals/:id/explanation or AI_ASSISTED). */
+  aiInsight: ProposalAiInsight | null;
   createdById: string;
   confirmedById: string | null;
   confirmedAt: string | null;
@@ -46,6 +59,7 @@ export interface ProposalOrderDto {
   orderId: string;
   code: string;
   customerName: string;
+  customerType: CustomerType;
   priority: OrderPriority;
   dueDate: CalendarDate;
   /** Current status of the order (it may have changed since the proposal). */
@@ -74,6 +88,7 @@ export function toProposalDto(proposal: ProposalRecord): ProposalDto {
     itemsProcessed: proposal.itemsProcessed,
     degraded: proposal.degraded,
     summary,
+    aiInsight: proposal.aiInsight,
     createdById: proposal.createdById,
     confirmedById: proposal.confirmedById,
     confirmedAt: proposal.confirmedAt?.toISOString() ?? null,
@@ -94,6 +109,7 @@ export function toProposalDetailDto(proposal: ProposalDetailRecord): ProposalDet
         orderId: line.orderId,
         code: formatOrderCode(line.order.number),
         customerName: line.order.customerName,
+        customerType: line.order.customerType,
         priority: line.order.priority,
         dueDate: fromDbDate(line.order.dueDate),
         orderStatus: line.order.status,

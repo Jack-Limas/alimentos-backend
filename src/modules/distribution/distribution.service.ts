@@ -176,7 +176,9 @@ export function createDistributionService({
         businessDate: toDbDate(data.businessDate),
         processingMs: Math.round(result.summary.processingMs),
         itemsProcessed: result.summary.itemsProcessed,
+        degraded: false,
         summary: { ...result.summary, ranking: result.ranking },
+        aiInsight: null,
         createdById: actor.userId,
         lines: result.lines.map((line) => ({ ...line, id: newId() })),
         audit: buildAuditEntry({

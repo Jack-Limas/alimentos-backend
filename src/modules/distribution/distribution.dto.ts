@@ -122,8 +122,14 @@ export function toProposalDetailDto(proposal: ProposalDetailRecord): ProposalDet
     });
   }
 
+  // Stable display: by product name, then FEFO (lots without stock last).
+  const byProductThenExpiry = (a: ProposalLineDto, b: ProposalLineDto) =>
+    a.productName.localeCompare(b.productName, 'es') ||
+    (a.lotExpiryDate ?? '9999-12-31').localeCompare(b.lotExpiryDate ?? '9999-12-31');
   return {
     ...toProposalDto(proposal),
-    orders: [...groups.values()].sort((a, b) => a.rank - b.rank),
+    orders: [...groups.values()]
+      .sort((a, b) => a.rank - b.rank)
+      .map((group) => ({ ...group, lines: group.lines.sort(byProductThenExpiry) })),
   };
 }

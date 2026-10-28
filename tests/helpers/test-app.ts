@@ -15,6 +15,7 @@ import {
   createInMemoryCustomerRepository,
   createInMemoryOrderRepository,
 } from './in-memory-orders.js';
+import { createInMemoryDistributionRepository } from './in-memory-distribution.js';
 
 export const ALLOWED_ORIGIN = 'http://localhost:3000';
 export const TEST_JWT_SECRET = 'test-jwt-access-secret-0123456789abcdef0123';
@@ -31,6 +32,13 @@ export function createTestRepositories() {
   const products = createInMemoryProductRepository(auditLogs);
   const inventory = createInMemoryInventoryRepository(auditLogs, products.products);
   const customers = createInMemoryCustomerRepository(auditLogs);
+  // Orders read products and customers and give stock back to the same lots.
+  const orders = createInMemoryOrderRepository(auditLogs, {
+    products: products.products,
+    customers: customers.customers,
+    lots: inventory.lots,
+    movements: inventory.movements,
+  });
   return {
     users: createInMemoryUserRepository(),
     refreshTokens: createInMemoryRefreshTokenRepository(),
@@ -39,12 +47,14 @@ export function createTestRepositories() {
     products,
     inventory,
     customers,
-    // Orders read products and customers and give stock back to the same lots.
-    orders: createInMemoryOrderRepository(auditLogs, {
+    orders,
+    // Proposals read pending orders and lots and confirm against the same data.
+    distribution: createInMemoryDistributionRepository(auditLogs, {
       products: products.products,
       customers: customers.customers,
       lots: inventory.lots,
       movements: inventory.movements,
+      orders,
     }),
   } satisfies AppRepositories;
 }

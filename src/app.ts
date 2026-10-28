@@ -34,6 +34,13 @@ import {
   type CustomerRepository,
 } from './modules/customers/index.js';
 import {
+  createDistributionController,
+  createDistributionService,
+  createPrismaDistributionRepository,
+  distributionRoutes,
+  type DistributionRepository,
+} from './modules/distribution/index.js';
+import {
   createHealthController,
   createHealthService,
   createPrismaDatabaseCheck,
@@ -80,6 +87,7 @@ export interface AppRepositories {
   inventory: InventoryRepository;
   customers: CustomerRepository;
   orders: OrderRepository;
+  distribution: DistributionRepository;
 }
 
 export interface AppDeps {
@@ -130,6 +138,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       inventory: createPrismaInventoryRepository(prisma),
       customers: createPrismaCustomerRepository(prisma),
       orders: createPrismaOrderRepository(prisma),
+      distribution: createPrismaDistributionRepository(prisma),
     };
     app.addHook('onClose', async () => {
       await prisma.$disconnect();
@@ -195,6 +204,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     customers: repositories.customers,
     today: () => inventoryMetrics.today(),
   });
+  const distributionService = createDistributionService({
+    distribution: repositories.distribution,
+    inventory: repositories.inventory,
+    clock,
+    timeZone: env.APP_TIMEZONE,
+  });
   const alertsService = createAlertsService({
     products: repositories.products,
     orders: repositories.orders,
@@ -231,6 +246,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(orderRoutes, {
     prefix: `${API_PREFIX}/orders`,
     controller: createOrderController(orderService),
+  });
+  await app.register(distributionRoutes, {
+    prefix: `${API_PREFIX}/distribution`,
+    controller: createDistributionController(distributionService),
   });
   await app.register(alertsRoutes, {
     prefix: `${API_PREFIX}/alerts`,

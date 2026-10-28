@@ -84,10 +84,13 @@ Capas del backend: `route → controller → service → repository (Prisma)`.
 | PATCH  | `/api/v1/orders/:id/status`                  | Máquina de estados; cancelar solo `ADMIN` (con `RETURN` a los lotes); 409 si no aplica                   |
 | GET    | `/api/v1/alerts`                             | `{ data: Alert[] }` calculadas al vuelo, de la más grave a la menos grave                                |
 | GET    | `/api/v1/distribution/snapshot`              | Pedidos `PENDING`, lotes despachables, salida 30 días, pesos y reglas (para el Web Worker)               |
-| POST   | `/api/v1/distribution/proposals`             | `{ strategy, weights? }` → el servidor calcula y guarda la propuesta `DRAFT`                             |
+| POST   | `/api/v1/distribution/proposals`             | `{ strategy, weights?, locale? }` → el servidor calcula y guarda la propuesta `DRAFT`                    |
 | GET    | `/api/v1/distribution/proposals[/:id]`       | Listado paginado; detalle con líneas agrupadas por pedido                                                |
 | POST   | `/api/v1/distribution/proposals/:id/confirm` | Una transacción: descuenta FEFO, `EXIT_DISPATCH`, pedidos a `IN_PREPARATION`; 409 `STALE_PROPOSAL`       |
 | POST   | `/api/v1/distribution/proposals/:id/discard` | Solo `DRAFT`                                                                                             |
+| POST   | `/api/v1/ai/proposals/:id/explanation`       | Explicación de la IA guardada en `aiInsight`; si existe la devuelve (`cached`); `?refresh=true`          |
+| POST   | `/api/v1/ai/rescue-plan`                     | Solo `ADMIN`; acciones para productos con `wasteRisk = HIGH`                                             |
+| POST   | `/api/v1/ai/briefing`                        | Resumen del día; el `OPERATOR` recibe solo datos operativos                                              |
 
 Todas las respuestas incluyen `Server-Timing: app;dur=<ms>`. Los errores siguen el formato
 `{ "error": { "code", "message", "details" } }`.
@@ -127,9 +130,9 @@ Plantilla en [.env.example](.env.example). Nunca se commitean valores reales.
 | `LOGIN_WINDOW_MINUTES`   | No          | Ventana del límite de intentos (15 por defecto)          |
 | `APP_TIMEZONE`           | No          | Zona del calendario de negocio (`America/Bogota`)        |
 | `SHEET_LINK_SECRET`      | [EXTRA]     | Enlaces firmados de hoja de despacho                     |
-| `AI_SERVICE_URL`         | Fase IA     | URL de `alimentos-ai`                                    |
-| `AI_INTERNAL_KEY`        | Fase IA     | Clave enviada en `X-Internal-Key`                        |
-| `AI_TIMEOUT_MS`          | Fase IA     | Timeout de las llamadas a la IA                          |
+| `AI_SERVICE_URL`         | No          | URL de `alimentos-ai`; sin ella la IA queda desactivada  |
+| `AI_INTERNAL_KEY`        | No          | Clave enviada en `X-Internal-Key` (igual en ambos repos) |
+| `AI_TIMEOUT_MS`          | No          | Timeout por intento de la IA (15000 por defecto)         |
 | `CLOUDINARY_URL`         | [EXTRA]     | Fotos de productos                                       |
 | `SEED_ADMIN_EMAIL`       | Seed        | Email del admin demo (sin valor por defecto)             |
 | `SEED_ADMIN_PASSWORD`    | Seed        | 12+ caracteres con mayúscula, minúscula, número, símbolo |
@@ -347,6 +350,13 @@ Los dos resultados se combinan en un `Map<productId, …>`. Los filtros `stockSt
   transacción. Cualquier cambio intermedio (otra salida, una cancelación, otra propuesta
   confirmada) da 409 `STALE_PROPOSAL` y no deja nada a medias.
 
+### `AI_ASSISTED`
+
+Calcula `BALANCED`, detecta los grupos de empate (|Δscore| < 2), pide a `alimentos-ai` el orden
+de esos pedidos y la explicación, y vuelve a ejecutar el motor con `tieBreakRanks`: solo cambian
+los empates. Si la IA falla o no está configurada, guarda el plan `BALANCED` con
+`degraded: true` y `summary.aiError`. El usuario siempre recibe propuesta.
+
 ### Fixtures de paridad (para el frontend)
 
 `tests/fixtures/distribution-parity/*.json` tiene casos con `snapshot` de entrada y `expected`
@@ -361,6 +371,25 @@ Los dos resultados se combinan en un `Map<productId, …>`. Los filtros `stockSt
 El frontend **copia** estos archivos (los repos no comparten código) y ejecuta su copia del motor
 en el Web Worker con `now = () => 0`: el resultado debe ser idéntico. Si cambia el algoritmo, se
 regeneran aquí, se revisan a mano y se vuelven a copiar al frontend.
+
+## IA (`alimentos-ai`)
+
+El backend es el único que llama a `alimentos-ai` (`src/modules/ai/`). El cliente web solo envía
+IDs y `locale`; el contexto se arma desde la BD.
+
+- **Opcional**: sin `AI_SERVICE_URL` o `AI_INTERNAL_KEY` la IA queda "no configurada": el resto
+  funciona, `AI_ASSISTED` se degrada y `/ai/*` responde 503 `AI_UNAVAILABLE` `NOT_CONFIGURED`.
+- **Cliente HTTP**: `X-Internal-Key`, timeout por intento (`AI_TIMEOUT_MS`, 15 s), 1 reintento
+  solo ante `TIMEOUT`, `UPSTREAM_ERROR` o error de red; respuestas validadas con Zod.
+- **Enfriamiento**: tras `QUOTA_EXCEEDED` no llama hasta que pase `Retry-After` (o 60 s).
+- **Datos mínimos**: los clientes viajan como tipo (`HOSPITAL`, `SCHOOL`…), nunca nombre, email
+  ni teléfono; el briefing manda conteos de alertas, no las alertas.
+- **Caché**: la explicación se guarda en `DistributionProposal.aiInsight` (columna `Json?`).
+- **Límite**: 10 llamadas por minuto y usuario a `/ai/*` → 429 con `Retry-After`.
+- **Auditoría**: `AI_REQUESTED` con endpoint, categoría y latencia, sin el contenido.
+
+En local: `alimentos-ai` en el puerto 4100, `AI_SERVICE_URL=http://localhost:4100` y la misma
+`AI_INTERNAL_KEY` en los dos `.env`.
 
 ## CI
 

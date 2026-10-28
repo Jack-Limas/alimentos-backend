@@ -285,3 +285,21 @@ model OrderStatusHistory {
   @@index([orderId, createdAt])
   @@map("order_status_history")
 }
+
+// ---------------------------------------------------------------------------
+// Distribution proposals (contract, section 4.7)
+// ---------------------------------------------------------------------------
+
+enum ProposalStatus {
+  DRAFT
+  CONFIRMED
+  DISCARDED
+}
+
+/// Prioritization strategy. AI_ASSISTED is declared but not available yet.
+enum Strategy {
+  BALANCED
+  URGENCY_FIRST
+  WASTE_FIRST
+  AI_ASSISTED
+}

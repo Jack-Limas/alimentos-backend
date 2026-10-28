@@ -180,6 +180,8 @@ model InventoryMovement {
 
   @@index([lotId])
   @@index([type, createdAt])
+  /// Movements of an order (cancellation returns, confirmation dispatches).
+  @@index([orderId])
   @@map("inventory_movements")
 }
 

@@ -50,6 +50,16 @@ Conventions for anyone (human or AI assistant) working in this repository.
   `ALERT_RULES`. Fetch aggregates (groupBy) and join them with a `Map`, never one query per row.
 - Audit metadata never stores customer phone numbers or emails.
 
+## Distribution rules
+
+- The engine (`src/modules/distribution/domain/`) is pure and deterministic; inject `now` for
+  `processingMs`. Any change to scoring, tie-breaking or lot eligibility must update the parity
+  fixtures in `tests/fixtures/distribution-parity/` (and the frontend copy).
+- A lot is dispatchable only if it expires tomorrow or later (`MIN_DAYS_TO_DISPATCH`).
+- The server never accepts plan figures from the client: only `{ strategy, weights? }`.
+- Confirmation is one transaction of conditional updates; any mismatch is a 409 `STALE_PROPOSAL`
+  with nothing written.
+
 ## Errors
 
 - Response format: `{ "error": { "code": "STRING", "message": "text", "details": {} } }`.

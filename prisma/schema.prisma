@@ -327,6 +327,8 @@ model DistributionProposal {
   itemsProcessed Int
   degraded       Boolean        @default(false)
   summary        Json
+  /// AI explanation of the plan { summary, highlights, tieBreakOrder?, meta }; null until requested.
+  aiInsight      Json?
   createdById    String         @db.Uuid
   createdBy      User           @relation("ProposalCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   confirmedById  String?        @db.Uuid

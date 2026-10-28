@@ -252,6 +252,23 @@ describe('GET /api/v1/products', () => {
     expect(low.json<{ meta: { total: number } }>().meta.total).toBe(1);
   });
 
+  it('filters by wasteRisk computed from the metrics, and rejects unknown values', async () => {
+    const { milk, rice, beans } = seedCatalog();
+
+    const high = await call(ctx.app, ctx.adminToken, 'GET', '/api/v1/products?wasteRisk=HIGH');
+    const none = await call(ctx.app, ctx.adminToken, 'GET', '/api/v1/products?wasteRisk=NONE');
+    const bad = await call(ctx.app, ctx.adminToken, 'GET', '/api/v1/products?wasteRisk=MAX');
+
+    expect(high.json<{ data: ProductDto[] }>().data.map((p) => p.id)).toEqual([milk.id]);
+    expect(
+      none
+        .json<{ data: ProductDto[] }>()
+        .data.map((p) => p.id)
+        .sort(),
+    ).toEqual([rice.id, beans.id].sort());
+    expect(bad.statusCode).toBe(400);
+  });
+
   it('filters by expiringWithinDays', async () => {
     const { milk } = seedCatalog();
 

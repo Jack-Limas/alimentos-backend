@@ -32,6 +32,8 @@ model User {
   inventoryMovements InventoryMovement[]
   ordersCreated      Order[]
   orderStatusChanges OrderStatusHistory[]
+  proposalsCreated   DistributionProposal[] @relation("ProposalCreatedBy")
+  proposalsConfirmed DistributionProposal[] @relation("ProposalConfirmedBy")
 
   @@map("users")
 }
@@ -302,4 +304,28 @@ enum Strategy {
   URGENCY_FIRST
   WASTE_FIRST
   AI_ASSISTED
+}
+
+/// A distribution plan computed by the server from a snapshot of PENDING orders and lots.
+model DistributionProposal {
+  id             String         @id @default(uuid()) @db.Uuid
+  strategy       Strategy
+  status         ProposalStatus @default(DRAFT)
+  /// { priority, deadlineUrgency, expiryPressure }, summing 100.
+  weights        Json
+  /// Business date (APP_TIMEZONE) the proposal was computed for.
+  businessDate   DateTime       @db.Date
+  processingMs   Int
+  itemsProcessed Int
+  degraded       Boolean        @default(false)
+  summary        Json
+  createdById    String         @db.Uuid
+  createdBy      User           @relation("ProposalCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  confirmedById  String?        @db.Uuid
+  confirmedBy    User?          @relation("ProposalConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
+  confirmedAt    DateTime?
+  createdAt      DateTime       @default(now())
+
+  @@index([status, createdAt])
+  @@map("distribution_proposals")
 }

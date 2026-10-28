@@ -30,10 +30,10 @@ export type {
   SnapshotProduct,
 } from './snapshot.js';
 export {
+  AiAssistedStrategy,
   BalancedStrategy,
   createStrategy,
   InvalidWeightsError,
-  StrategyNotAvailableError,
   UrgencyFirstStrategy,
   WasteFirstStrategy,
   type PrioritizationStrategy,

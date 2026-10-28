@@ -144,8 +144,10 @@ describe('strategies', () => {
     expect(() => createStrategy('BALANCED', weights)).toThrow(InvalidWeightsError);
   });
 
-  it('declare AI_ASSISTED but refuse it in this phase', () => {
-    expect(() => createStrategy('AI_ASSISTED')).toThrow('not available');
+  it('AI_ASSISTED scores like BALANCED (the AI only reorders ties)', () => {
+    const strategy = createStrategy('AI_ASSISTED');
+    expect(strategy.name).toBe('AI_ASSISTED');
+    expect(strategy.weights).toEqual(balanced.weights);
   });
 });
 

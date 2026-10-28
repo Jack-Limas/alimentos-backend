@@ -29,7 +29,9 @@ export function createDistributionController(service: DistributionService): Dist
 
     createProposal: async (request, reply) => {
       const body = createProposalSchema.parse(request.body);
-      const data = await service.createProposal(body, actorOf(request));
+      // `authorize` already checked the claims, so the role is ADMIN or OPERATOR.
+      const actor = { ...actorOf(request), role: request.user.role };
+      const data = await service.createProposal(body, actor);
       reply.status(201);
       return { data };
     },

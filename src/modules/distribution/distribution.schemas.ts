@@ -13,6 +13,8 @@ export const createProposalSchema = z.strictObject({
   weights: z
     .strictObject({ priority: weight, deadlineUrgency: weight, expiryPressure: weight })
     .optional(),
+  /** Language of the AI explanation (AI_ASSISTED only). */
+  locale: z.enum(['es', 'en']).default('es'),
 });
 
 export const proposalListQuerySchema = paginationQuerySchema.extend({

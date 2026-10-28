@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { Strategy } from '@prisma/client';
+import { toExplanationInput, type AiRole, type PlanLine } from '../ai/ai-context.js';
+import { AiError } from '../ai/ai-error.js';
+import type { AiGateway } from '../ai/ai-gateway.js';
+import { toProposalInsight } from '../ai/ai-insight.js';
+import type { AiLocale } from '../ai/ai.schemas.js';
 import { AUDIT_ACTIONS, buildAuditEntry } from '../audit/index.js';
 import {
   addDays,
@@ -23,9 +28,11 @@ import {
   InvalidWeightsError,
   MAX_RESCORES,
   MIN_DAYS_TO_DISPATCH,
-  StrategyNotAvailableError,
   STRATEGY_WEIGHTS,
+  findTieGroups,
   type DistributionSnapshot,
+  type PrioritizationStrategy,
+  type ProposalResult,
   type SnapshotProduct,
   type Weights,
 } from './domain/index.js';
@@ -38,6 +45,7 @@ import {
 import {
   StaleProposalError,
   type DistributionRepository,
+  type ProposalAiInsight,
   type SnapshotOrderRow,
 } from './distribution.repository.js';
 import type { CreateProposalBody, ProposalListQuery } from './distribution.schemas.js';
@@ -57,9 +65,12 @@ export interface SnapshotDto extends DistributionSnapshot {
   };
 }
 
+/** Who asks for a plan: AI_ASSISTED adapts the explanation to the role and language. */
+export type PlanningActor = Actor & { role: AiRole };
+
 export interface DistributionService {
   snapshot(): Promise<SnapshotDto>;
-  createProposal(input: CreateProposalBody, actor: Actor): Promise<ProposalDetailDto>;
+  createProposal(input: CreateProposalBody, actor: PlanningActor): Promise<ProposalDetailDto>;
   list(query: ProposalListQuery): Promise<Paginated<ProposalDto>>;
   get(id: string): Promise<ProposalDetailDto>;
   confirm(id: string, actor: Actor): Promise<ProposalDetailDto>;
@@ -71,6 +82,8 @@ export interface DistributionServiceDeps {
   inventory: InventoryRepository;
   clock: Clock;
   timeZone: string;
+  /** AI_ASSISTED reorders ties with it; without it the strategy is degraded (NOT_CONFIGURED). */
+  ai?: AiGateway | undefined;
   newId?: () => string;
   /** Clock for processingMs (performance.now by default). */
   now?: () => number;
@@ -92,6 +105,7 @@ export function createDistributionService({
   inventory,
   clock,
   timeZone,
+  ai,
   newId = randomUUID,
   now = () => performance.now(),
 }: DistributionServiceDeps): DistributionService {
@@ -138,11 +152,6 @@ export function createDistributionService({
     try {
       return createStrategy(name, weights);
     } catch (error) {
-      if (error instanceof StrategyNotAvailableError) {
-        throw new AppError(400, 'STRATEGY_NOT_AVAILABLE', 'This strategy is not available yet', {
-          strategy: name,
-        });
-      }
       if (error instanceof InvalidWeightsError) {
         throw new AppError(400, 'VALIDATION_ERROR', 'Weights must add up to 100', {
           field: 'weights',
@@ -150,6 +159,88 @@ export function createDistributionService({
         });
       }
       throw error;
+    }
+  }
+
+  /** Plan lines with what the AI may see: order code, customer type and product name. */
+  function planLinesOf(result: ProposalResult, data: SnapshotDto): PlanLine[] {
+    const orders = new Map(data.orders.map((order) => [order.id, order]));
+    const products = new Map(data.products.map((product) => [product.id, product.name]));
+    return result.lines.flatMap((line) => {
+      const order = orders.get(line.orderId);
+      if (!order) return [];
+      return {
+        orderItemId: line.orderItemId,
+        orderCode: order.code,
+        customerType: order.customerType,
+        productName: products.get(line.productId) ?? '?',
+        requestedQty: line.requestedQty,
+        recommendedQty: line.recommendedQty,
+        score: line.score,
+        reasons: line.reasons,
+      };
+    });
+  }
+
+  interface AssistedPlan {
+    result: ProposalResult;
+    degraded: boolean;
+    aiInsight: ProposalAiInsight | null;
+  }
+
+  /**
+   * AI_ASSISTED (contract 4.7): BALANCED scores, the AI orders the tied
+   * orders (|Δscore| < 2) and explains the plan, and the engine runs again
+   * with those ranks. If the AI fails, the BALANCED plan is kept as degraded
+   * with summary.aiError: the user always gets a proposal.
+   */
+  async function assisted(
+    strategy: PrioritizationStrategy,
+    data: SnapshotDto,
+    actor: PlanningActor,
+    locale: AiLocale,
+    proposalId: string,
+  ): Promise<AssistedPlan> {
+    const base = buildProposal(data, strategy, { now });
+    const tieGroups = findTieGroups(
+      base.ranking.map((entry) => ({ key: entry.orderId, score: entry.score })),
+    ).length;
+    const withSummary = (result: ProposalResult, aiError?: string): ProposalResult => ({
+      ...result,
+      summary: { ...result.summary, tieGroups, ...(aiError ? { aiError } : {}) },
+    });
+
+    // Nothing to plan: no call to the AI.
+    if (base.lines.length === 0) {
+      return { result: withSummary(base), degraded: false, aiInsight: null };
+    }
+    try {
+      if (!ai) throw new AiError('NOT_CONFIGURED');
+      const answer = await ai.explainProposal(
+        toExplanationInput(planLinesOf(base, data), {
+          locale,
+          role: actor.role,
+          strategy: strategy.name,
+        }),
+        actor,
+        proposalId,
+      );
+      const order = answer.data.tieBreakOrder ?? [];
+      const result =
+        order.length > 1
+          ? buildProposal(data, strategy, {
+              now,
+              tieBreakRanks: new Map(order.map((code, index) => [code, index])),
+            })
+          : base;
+      return {
+        result: withSummary(result),
+        degraded: false,
+        aiInsight: toProposalInsight(answer, locale, clock()),
+      };
+    } catch (error) {
+      if (!(error instanceof AiError)) throw error;
+      return { result: withSummary(base, error.category), degraded: true, aiInsight: null };
     }
   }
 
@@ -162,12 +253,15 @@ export function createDistributionService({
   return {
     snapshot,
 
-    async createProposal({ strategy: name, weights }, actor) {
+    async createProposal({ strategy: name, weights, locale }, actor) {
       // Validate the strategy before touching the database.
       const strategy = strategyFor(name, weights);
       const data = await snapshot();
-      const result = buildProposal(data, strategy, { now });
       const id = newId();
+      const { result, degraded, aiInsight } =
+        name === 'AI_ASSISTED'
+          ? await assisted(strategy, data, actor, locale, id)
+          : { result: buildProposal(data, strategy, { now }), degraded: false, aiInsight: null };
 
       await distribution.createProposal({
         id,
@@ -176,9 +270,9 @@ export function createDistributionService({
         businessDate: toDbDate(data.businessDate),
         processingMs: Math.round(result.summary.processingMs),
         itemsProcessed: result.summary.itemsProcessed,
-        degraded: false,
+        degraded,
         summary: { ...result.summary, ranking: result.ranking },
-        aiInsight: null,
+        aiInsight,
         createdById: actor.userId,
         lines: result.lines.map((line) => ({ ...line, id: newId() })),
         audit: buildAuditEntry({
@@ -191,6 +285,7 @@ export function createDistributionService({
             orders: result.ranking.length,
             lines: result.lines.length,
             processingMs: result.summary.processingMs,
+            ...(degraded ? { degraded, aiError: result.summary.aiError } : {}),
           },
           ip: actor.ip,
         }),

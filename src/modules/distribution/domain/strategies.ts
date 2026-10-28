@@ -2,13 +2,7 @@ import type { CalendarDate } from '../../inventory/domain/index.js';
 import type { LotBook } from './lot-book.js';
 import { scoreOrder, type OrderScore } from './score.js';
 import type { SnapshotOrder } from './snapshot.js';
-import {
-  checkWeights,
-  STRATEGY_WEIGHTS,
-  type RuleStrategyName,
-  type StrategyName,
-  type Weights,
-} from './weights.js';
+import { checkWeights, STRATEGY_WEIGHTS, type StrategyName, type Weights } from './weights.js';
 
 /**
  * Strategy pattern: how orders are ranked. The engine only knows this
@@ -21,7 +15,7 @@ export interface PrioritizationStrategy {
 }
 
 abstract class WeightedStrategy implements PrioritizationStrategy {
-  abstract readonly name: RuleStrategyName;
+  abstract readonly name: StrategyName;
   readonly weights: Readonly<Weights>;
 
   constructor(weights?: Weights) {
@@ -59,10 +53,14 @@ export class WasteFirstStrategy extends WeightedStrategy {
   }
 }
 
-export class StrategyNotAvailableError extends Error {
-  constructor(public readonly strategy: StrategyName) {
-    super(`Strategy ${strategy} is not available yet`);
-    this.name = 'StrategyNotAvailableError';
+/**
+ * BALANCED scores; the service then asks the AI to reorder only the tied
+ * orders (buildProposal's tieBreakRanks). Without the AI it is BALANCED.
+ */
+export class AiAssistedStrategy extends WeightedStrategy {
+  readonly name = 'AI_ASSISTED' as const;
+  protected defaultWeights() {
+    return { ...STRATEGY_WEIGHTS.BALANCED };
   }
 }
 
@@ -87,7 +85,6 @@ export function createStrategy(name: StrategyName, weights?: Weights): Prioritiz
     case 'WASTE_FIRST':
       return new WasteFirstStrategy(weights);
     case 'AI_ASSISTED':
-      // Arrives in phase 3: rules first, then the AI reorders ties only.
-      throw new StrategyNotAvailableError(name);
+      return new AiAssistedStrategy(weights);
   }
 }

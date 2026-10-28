@@ -5,7 +5,7 @@ export interface Weights {
   expiryPressure: number;
 }
 
-/** Strategies with rule-based weights; AI_ASSISTED is declared but not available yet. */
+/** Strategies with their own weights; AI_ASSISTED uses BALANCED and reorders ties with the AI. */
 export const RULE_STRATEGIES = ['BALANCED', 'URGENCY_FIRST', 'WASTE_FIRST'] as const;
 export type RuleStrategyName = (typeof RULE_STRATEGIES)[number];
 export type StrategyName = RuleStrategyName | 'AI_ASSISTED';

@@ -53,6 +53,10 @@ export interface ProposalSummary {
   linesCount: number;
   rescoreCount: number;
   processingMs: number;
+  /** AI_ASSISTED only: groups of tied orders the AI could reorder. */
+  tieGroups?: number;
+  /** AI_ASSISTED only: why the AI failed (the plan is the BALANCED one, degraded). */
+  aiError?: string;
 }
 
 export interface ProposalResult {

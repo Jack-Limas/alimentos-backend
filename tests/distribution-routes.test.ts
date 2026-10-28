@@ -225,10 +225,22 @@ describe('POST /distribution/proposals', () => {
     });
   });
 
-  it('answers 400 STRATEGY_NOT_AVAILABLE for AI_ASSISTED in this phase', async () => {
+  it('AI_ASSISTED without the AI configured still plans: BALANCED, degraded, NOT_CONFIGURED', async () => {
+    seed();
+    const balanced = dataOf(await create({ strategy: 'BALANCED' }));
     const res = await create({ strategy: 'AI_ASSISTED' });
-    expect(res.statusCode).toBe(400);
-    expect(errorOf(res).code).toBe('STRATEGY_NOT_AVAILABLE');
+
+    expect(res.statusCode).toBe(201);
+    const assisted = dataOf(res);
+    expect(assisted).toMatchObject({
+      strategy: 'AI_ASSISTED',
+      degraded: true,
+      aiInsight: null,
+      weights: balanced.weights,
+      summary: { aiError: 'NOT_CONFIGURED', tieGroups: 0 },
+    });
+    expect(assisted.orders.map((o) => o.code)).toEqual(balanced.orders.map((o) => o.code));
+    expect(assisted.orders[0]?.customerType).toBe('SUPERMARKET');
   });
 
   it.each([

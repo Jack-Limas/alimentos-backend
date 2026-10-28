@@ -1,7 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { actorOf } from '../../shared/http/actor.js';
 import type { Paginated } from '../../shared/http/pagination.js';
-import type { LotDto, MovementDto } from './inventory.dto.js';
+import type { LotDto, MovementListDto } from './inventory.dto.js';
 import {
   entryBodySchema,
   exitBodySchema,
@@ -17,7 +17,7 @@ import type {
 
 export interface InventoryController {
   listLots: (request: FastifyRequest) => Promise<Paginated<LotDto>>;
-  listMovements: (request: FastifyRequest) => Promise<Paginated<MovementDto>>;
+  listMovements: (request: FastifyRequest) => Promise<Paginated<MovementListDto>>;
   summary: () => Promise<{ data: InventorySummary }>;
   createEntry: (request: FastifyRequest, reply: FastifyReply) => Promise<{ data: EntryResult }>;
   createExit: (request: FastifyRequest, reply: FastifyReply) => Promise<{ data: ExitResult }>;

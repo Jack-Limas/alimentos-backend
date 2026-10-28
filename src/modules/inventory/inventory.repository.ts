@@ -1,4 +1,4 @@
-import type { MovementType, Prisma } from '@prisma/client';
+import type { MovementType, Prisma, Unit } from '@prisma/client';
 import type { NewAuditLog } from '../audit/index.js';
 
 export interface LotRecord {
@@ -24,6 +24,12 @@ export interface MovementRecord {
   orderId: string | null;
   userId: string;
   createdAt: Date;
+}
+
+/** A movement with the name and unit of its product, for the movement log. */
+export interface MovementListRecord extends MovementRecord {
+  productName: string;
+  unit: Unit;
 }
 
 /** Remaining stock per product and expiry date (only rows with stock). */
@@ -100,7 +106,7 @@ export interface InventoryRepository {
   listMovements(
     filter: MovementFilter,
     page: { skip: number; take: number },
-  ): Promise<{ items: MovementRecord[]; total: number }>;
+  ): Promise<{ items: MovementListRecord[]; total: number }>;
   /** Lot + ENTRY movement + audit row in one transaction. */
   createEntry(entry: NewEntry): Promise<{ lot: LotRecord; movement: MovementRecord }>;
   /**

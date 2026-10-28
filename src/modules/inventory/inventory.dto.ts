@@ -1,6 +1,6 @@
-import type { MovementType } from '@prisma/client';
+import type { MovementType, Unit } from '@prisma/client';
 import { daysBetween, fromDbDate, type CalendarDate } from './domain/index.js';
-import type { LotRecord, MovementRecord } from './inventory.repository.js';
+import type { LotRecord, MovementListRecord, MovementRecord } from './inventory.repository.js';
 
 export interface LotDto {
   id: string;
@@ -43,6 +43,16 @@ export function toLotDto(lot: LotRecord, today: CalendarDate): LotDto {
     daysToExpiry,
     expired: daysToExpiry < 0,
   };
+}
+
+/** A movement of the log, with its product name and unit. */
+export interface MovementListDto extends MovementDto {
+  productName: string;
+  unit: Unit;
+}
+
+export function toMovementListDto(movement: MovementListRecord): MovementListDto {
+  return { ...toMovementDto(movement), productName: movement.productName, unit: movement.unit };
 }
 
 export function toMovementDto(movement: MovementRecord): MovementDto {

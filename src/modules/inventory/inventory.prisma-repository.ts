@@ -18,6 +18,10 @@ const WITH_PRODUCT = { lot: { select: { productId: true } } } as const;
 
 type MovementWithLot = Prisma.InventoryMovementGetPayload<{ include: typeof WITH_PRODUCT }>;
 
+const WITH_PRODUCT_NAME = {
+  lot: { select: { productId: true, product: { select: { name: true, unit: true } } } },
+} as const;
+
 function toMovementRecord({ lot, ...movement }: MovementWithLot): MovementRecord {
   return { ...movement, productId: lot.productId };
 }
@@ -114,14 +118,23 @@ export function createPrismaInventoryRepository(prisma: PrismaClient): Inventory
       const [items, total] = await prisma.$transaction([
         prisma.inventoryMovement.findMany({
           where,
-          include: WITH_PRODUCT,
+          // The product name and unit come in the same query (no N+1).
+          include: WITH_PRODUCT_NAME,
           orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
           skip: page.skip,
           take: page.take,
         }),
         prisma.inventoryMovement.count({ where }),
       ]);
-      return { items: items.map(toMovementRecord), total };
+      return {
+        items: items.map(({ lot, ...movement }) => ({
+          ...movement,
+          productId: lot.productId,
+          productName: lot.product.name,
+          unit: lot.product.unit,
+        })),
+        total,
+      };
     },
 
     async createEntry({ lot, movement, audit }) {

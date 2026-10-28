@@ -13,7 +13,14 @@ import {
   toDbDate,
   type FefoAllocation,
 } from './domain/index.js';
-import { toLotDto, toMovementDto, type LotDto, type MovementDto } from './inventory.dto.js';
+import {
+  toLotDto,
+  toMovementDto,
+  toMovementListDto,
+  type LotDto,
+  type MovementDto,
+  type MovementListDto,
+} from './inventory.dto.js';
 import type { InventoryMetricsService } from './inventory-metrics.service.js';
 import { InsufficientStockError, type InventoryRepository } from './inventory.repository.js';
 import type { EntryBody, ExitBody, LotListQuery, MovementListQuery } from './inventory.schemas.js';
@@ -42,7 +49,7 @@ export interface ExitResult {
 
 export interface InventoryService {
   listLots(query: LotListQuery): Promise<Paginated<LotDto>>;
-  listMovements(query: MovementListQuery): Promise<Paginated<MovementDto>>;
+  listMovements(query: MovementListQuery): Promise<Paginated<MovementListDto>>;
   summary(): Promise<InventorySummary>;
   createEntry(input: EntryBody, actor: Actor): Promise<EntryResult>;
   createExit(input: ExitBody, actor: Actor): Promise<ExitResult>;
@@ -138,7 +145,7 @@ export function createInventoryService({
         },
         toSkipTake(query),
       );
-      return paginate(items.map(toMovementDto), total, query);
+      return paginate(items.map(toMovementListDto), total, query);
     },
 
     async summary() {

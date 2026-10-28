@@ -80,7 +80,11 @@ export function createInMemoryProductRepository(audit: AuditLogRepository) {
   return repository;
 }
 
-export function createInMemoryInventoryRepository(audit: AuditLogRepository) {
+/** `products` gives the movement log its product names and units, like the SQL join. */
+export function createInMemoryInventoryRepository(
+  audit: AuditLogRepository,
+  products = new Map<string, ProductRecord>(),
+) {
   const lots = new Map<string, LotRecord>();
   const movements: MovementRecord[] = [];
   const productOf = (lotId: string) => lots.get(lotId)?.productId ?? '';
@@ -186,7 +190,11 @@ export function createInMemoryInventoryRepository(audit: AuditLogRepository) {
         .filter((m) => !filter.to || m.createdAt <= filter.to)
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
       return Promise.resolve({
-        items: matched.slice(page.skip, page.skip + page.take),
+        items: matched.slice(page.skip, page.skip + page.take).map((m) => ({
+          ...m,
+          productName: products.get(m.productId)?.name ?? '',
+          unit: products.get(m.productId)?.unit ?? 'KG',
+        })),
         total: matched.length,
       });
     },

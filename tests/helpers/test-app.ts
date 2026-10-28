@@ -29,7 +29,7 @@ export function createTestRepositories() {
   const auditLogs = createInMemoryAuditLogRepository();
   // Every repository writes its audit rows into the same in-memory audit log.
   const products = createInMemoryProductRepository(auditLogs);
-  const inventory = createInMemoryInventoryRepository(auditLogs);
+  const inventory = createInMemoryInventoryRepository(auditLogs, products.products);
   const customers = createInMemoryCustomerRepository(auditLogs);
   return {
     users: createInMemoryUserRepository(),

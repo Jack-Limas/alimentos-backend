@@ -385,6 +385,12 @@ El cliente solo envía IDs. El backend arma el contexto filtrado por rol. Si fal
 
 **Errores de la IA** (`{ error: { code, category } }`): `MODEL_NOT_FOUND`, `QUOTA_EXCEEDED`, `TIMEOUT`, `UPSTREAM_ERROR`, `INVALID_API_KEY`, más `UNAUTHORIZED` (clave interna) y `VALIDATION_ERROR`.
 
+- Cada respuesta exitosa trae `meta: { model, promptVersion, latencyMs, inputTokens?, outputTokens?, attempts, discardedItems }`.
+- Límites de entrada: máximo 200 elementos por lista y 120 caracteres por texto (si no → 400 sin llamar a Gemini).
+- El servicio de IA tiene su propio timeout (12 s por defecto, menor que los 15 s del backend) y hace 1 reintento interno ante 5xx, red o JSON inválido.
+- `QUOTA_EXCEEDED` llega con `Retry-After` y `retryAfterSec` cuando Google lo indica.
+- Todo texto llega en **texto plano** (sin Markdown ni emojis) y cada cifra mencionada existe en la entrada; lo que no cumple se descarta (`discardedItems`). `tieBreakOrder` solo contiene pedidos empatados (|Δscore| < 2). El frontend da el formato visual.
+
 ---
 
 ## 6. Variables de entorno (sin valores)

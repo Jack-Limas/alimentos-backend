@@ -76,7 +76,7 @@ erDiagram
   Order { uuid id string code uuid customerId enum status enum priority datetime dueDate }
   OrderItem { uuid id uuid orderId uuid productId decimal requestedQty decimal allocatedQty }
   OrderStatusHistory { uuid id uuid orderId enum from enum to uuid userId string note }
-  DistributionProposal { uuid id enum strategy enum status json weights int processingMs bool degraded }
+  DistributionProposal { uuid id enum strategy enum status json weights int processingMs bool degraded json aiInsight }
   ProposalLine { uuid id uuid orderItemId uuid lotId decimal recommendedQty json reasons }
 ```
 
@@ -283,7 +283,7 @@ expiryPressure  = máx sobre los ítems de clamp(1 − díasHastaVencimientoDelL
 | `BALANCED` | 40 / 35 / 25 | Equilibrio por defecto |
 | `URGENCY_FIRST` | 20 / 70 / 10 | Entregar a tiempo |
 | `WASTE_FIRST` | 20 / 20 / 60 | Mover primero lo que vence |
-| `AI_ASSISTED` | — | Declarada; responde 400 `STRATEGY_NOT_AVAILABLE` hasta la fase 3 |
+| `AI_ASSISTED` | 40 / 35 / 25 | BALANCED + la IA reordena **solo los empates**; si la IA falla, BALANCED con `degraded: true` |
 
 Se pueden enviar pesos propios `{ priority, deadlineUrgency, expiryPressure }`: no negativos, máx. 2 decimales y **suma exacta 100** (si no, 400 `VALIDATION_ERROR` con `details.problem`).
 
@@ -292,13 +292,13 @@ Se pueden enviar pesos propios `{ priority, deadlineUrgency, expiryPressure }`: 
 3. Cada ítem toma stock **FEFO** (`expiryDate`, luego `receivedAt`, luego `id`) de un `Map<lotId, restante>`.
 4. **Lote despachable = vence mañana o después** (`expiryDate ≥ hoy + 1`; lo que vence hoy no se despacha). *Cambio frente a la versión anterior ("excluir los que vencen antes de `dueDate`")*: esa regla dejaba en bodega justo los lotes más próximos a vencer cuando el pedido era para más adelante, y terminaban en merma. Enviar antes lo que vence antes reduce la merma; lo que vence hoy queda para merma o uso del día.
 5. Una línea por (ítem, lote) con `rank, score, requestedQty, availableQty` (stock despachable del producto cuando se atendió el ítem), `recommendedQty` y `reasons[]`: `PRIORITY_LOW|MEDIUM|HIGH|URGENT`, `DUE_IN_DAYS {days}`, `OVERDUE {days}`, `EXPIRES_IN_DAYS {days}`, `PARTIAL_STOCK {requested, allocated}`, `NO_STOCK {requested}` (línea sin lote y `recommendedQty = 0`).
-6. `summary`: `ordersFull, ordersPartial, ordersUnserved, totalRecommended` (por unidad, nunca se suman unidades distintas), `itemsProcessed, linesCount, rescoreCount, processingMs`.
+6. `summary`: `ordersFull, ordersPartial, ordersUnserved, totalRecommended` (por unidad, nunca se suman unidades distintas), `itemsProcessed, linesCount, rescoreCount, processingMs`. Con `AI_ASSISTED` además `tieGroups` y, si la IA falló, `aiError` (categoría).
 
 Es determinista: el mismo snapshot y la misma estrategia dan siempre el mismo plan, sin importar el orden de la entrada.
 
-- **Snapshot** (`GET /distribution/snapshot`): `{ businessDate, orders[{ id, code, number, customerName, priority, dueDate, createdAt, items[{ id, productId, requestedQty }] }], lots[{ id, productId, quantity, expiryDate, receivedAt }], products[{ id, name, unit, avgDailyOut30d }], strategies, rules }`. Solo lotes despachables con stock. Cuatro consultas en total, sin N+1.
-- **Generar** (`POST /proposals`, 201): el cliente solo envía `{ strategy, weights? }`; cualquier otra cifra es 400. El servidor arma el snapshot, calcula y guarda `DRAFT` + líneas + auditoría.
-- **Detalle** (`GET /proposals/:id`): líneas agrupadas por pedido en orden de `rank`, con `components`, `fulfillment: FULL|PARTIAL|UNSERVED`, `rescores` y el estado actual del pedido.
+- **Snapshot** (`GET /distribution/snapshot`): `{ businessDate, orders[{ id, code, number, customerName, customerType, priority, dueDate, createdAt, items[{ id, productId, requestedQty }] }], lots[{ id, productId, quantity, expiryDate, receivedAt }], products[{ id, name, unit, avgDailyOut30d }], strategies, rules }`. Solo lotes despachables con stock. Cuatro consultas en total, sin N+1.
+- **Generar** (`POST /proposals`, 201): el cliente solo envía `{ strategy, weights?, locale? }` (`locale` `es|en`, por defecto `es`, idioma de la explicación de `AI_ASSISTED`); cualquier otra cifra es 400. El servidor arma el snapshot, calcula y guarda `DRAFT` + líneas + auditoría.
+- **Detalle** (`GET /proposals/:id`): líneas agrupadas por pedido en orden de `rank`, con `customerType`, `components`, `fulfillment: FULL|PARTIAL|UNSERVED`, `rescores` y el estado actual del pedido. La propuesta trae `degraded` y `aiInsight` (`null` o `{ summary, highlights[], tieBreakOrder?, locale, model, promptVersion?, latencyMs, generatedAt }`).
 - **Confirmar** (`POST /:id/confirm`), en **una transacción**:
   1. `DRAFT → CONFIRMED` condicional (si no estaba en DRAFT → 409 `STALE_PROPOSAL` `reason: NOT_DRAFT`).
   2. Por cada línea con `recommendedQty > 0`: decremento condicional del lote (`quantity >= qty`); si falla → 409 `STALE_PROPOSAL` `reason: STOCK_CHANGED` con `{ lotId, productId }`.
@@ -307,7 +307,14 @@ Es determinista: el mismo snapshot y la misma estrategia dan siempre el mismo pl
   Cualquier 409 deshace todo: no quedan cambios parciales. Una propuesta de otro día de negocio responde 409 `reason: BUSINESS_DATE_CHANGED` (los lotes despachables dependen de la fecha).
 - **Descartar** (`POST /:id/discard`): solo `DRAFT`; si no, 409 `INVALID_STATUS_TRANSITION`.
 
-`AI_ASSISTED` (fase 3): ejecuta las reglas y pide a la IA reordenar **solo empates** (|Δscore| < 2) y explicar. Si la IA falla → resultado de reglas con `degraded: true`.
+`AI_ASSISTED` (patrón Strategy, mismos pesos que `BALANCED`):
+
+1. Calcula el plan `BALANCED` y detecta los **grupos de empate**: pedidos ordenados por score donde cada uno queda a menos de 2 puntos del anterior (|Δscore| < 2), la misma regla que usa `alimentos-ai`.
+2. Pide a la IA la explicación y `tieBreakOrder` (lista de `orderCode`).
+3. Vuelve a ejecutar el motor con `tieBreakRanks` (`Map<orderCode, rank>`): dentro de un grupo de empate decide el rango de la IA (antes que `dueDate`); los pedidos que la IA no ordenó van después; entre grupos y para los demás pedidos el comparador no cambia. El dominio sigue puro y síncrono.
+4. Guarda la explicación en `aiInsight`.
+
+Si la IA falla (o no está configurada) → plan `BALANCED` con `degraded: true` y `summary.aiError = <categoría>`. El usuario siempre recibe propuesta (201).
 
 > El mismo algoritmo existe en el backend y en el Web Worker del frontend (no hay código compartido). La paridad se verifica con los fixtures de `alimentos-backend/tests/fixtures/distribution-parity/`, que el frontend copia y ejecuta en sus pruebas.
 
@@ -345,7 +352,19 @@ Respuesta: `{ "data": Alert[] }`, ordenadas por severidad (CRITICAL primero), de
 | POST | `/ai/rescue-plan` | A | [OBL] productos con `WASTE_RISK` → acciones sugeridas |
 | POST | `/ai/briefing` | A, O | [EXTRA] resumen del día |
 
-El cliente solo envía IDs. El backend arma el contexto filtrado por rol. Si falla: 503 `AI_UNAVAILABLE` con `details.category`; la UI muestra el resultado de reglas.
+El cliente solo envía IDs (en la ruta) y `{ locale?: "es" | "en" }` (por defecto `es`). El backend arma el contexto desde la BD, filtrado por rol y **sin datos personales** de clientes (viaja el tipo de cliente, nunca nombre, email ni teléfono).
+
+| Ruta | Contexto que arma el backend |
+|---|---|
+| `/ai/proposals/:id/explanation` | Una línea por ítem (los lotes se suman): `orderCode, customerType, product, requestedQty, recommendedQty, score, reasons`. Guarda la respuesta en `aiInsight`; si ya existe en ese `locale` la devuelve con `cached: true` sin llamar a la IA. `?refresh=true` la regenera. Propuesta sin líneas → 400 `VALIDATION_ERROR` `reason: EMPTY_PROPOSAL` |
+| `/ai/rescue-plan` | Productos `ACTIVE` con `wasteRisk = HIGH` (mismas métricas que las alertas): `name, category, qty, unit, daysToExpiry, avgDailyOut`, + tipos de los clientes activos. Sin productos en riesgo → 200 `{ actions: [] }` sin llamar a la IA (`model: null`) |
+| `/ai/briefing` | Conteos de alertas por `(type, severity, code)` (nunca las alertas con nombres), top 10 pedidos `PENDING` por score `BALANCED` y KPIs de `/inventory/summary` + `pendingOrders`. El OPERATOR recibe solo datos operativos: sin alertas `WASTE_RISK`, sin `customerType` y solo los KPIs `lowStock, outOfStock, expiringSoon, pendingOrders` |
+
+- Respuesta: `{ "data": {...}, "meta": { "model", "latencyMs", "cached" } }`.
+- Error: 503 `AI_UNAVAILABLE` con `details.category`: `NOT_CONFIGURED` (faltan `AI_SERVICE_URL` / `AI_INTERNAL_KEY`), `TIMEOUT`, `UPSTREAM_ERROR`, `QUOTA_EXCEEDED` (con `Retry-After` y `details.retryAfterSec`), `INVALID_API_KEY`, `MODEL_NOT_FOUND`. La UI muestra el resultado de reglas.
+- Límite: 10 llamadas por minuto y usuario a `/ai/*` (en memoria, ventana deslizante) → 429 `TOO_MANY_REQUESTS` con `Retry-After`. Se cuenta después de `authorize`: un 403 no gasta cupo.
+- Auditoría `AI_REQUESTED` por cada llamada real: `{ endpoint, category: OK|<categoría>, latencyMs, model? }`, nunca el contenido.
+- Excepción a "el backend nunca envía texto traducido": el texto de la IA llega en el idioma pedido, en texto plano.
 
 ### 4.10 Reportes y métricas
 | Método | Ruta | Rol | Etiqueta |
@@ -373,7 +392,10 @@ El cliente solo envía IDs. El backend arma el contexto filtrado por rol. Si fal
 
 ## 5. Contrato backend → `alimentos-ai`
 
-- Header `X-Internal-Key` (comparación timing-safe). Timeout 15 s, 1 reintento solo en `TIMEOUT` y `UPSTREAM_ERROR`.
+- Header `X-Internal-Key` (comparación timing-safe en `alimentos-ai`); el valor sale de `AI_INTERNAL_KEY` y nunca se registra.
+- Cliente del backend (`src/modules/ai/ai-client.ts`): timeout `AI_TIMEOUT_MS` (15 s por defecto) por intento con `AbortController`, **1 reintento** solo ante `TIMEOUT`, `UPSTREAM_ERROR` o error de red (también un 5xx desconocido). No reintenta `QUOTA_EXCEEDED`, `INVALID_API_KEY`, `MODEL_NOT_FOUND`, la clave interna rechazada (401) ni un 400.
+- **Enfriamiento por cuota**: tras `QUOTA_EXCEEDED` el backend no vuelve a llamar hasta que pase `Retry-After` (o 60 s); mientras tanto responde `QUOTA_EXCEEDED` sin llamar. Estado en memoria.
+- El backend valida cada respuesta con Zod; si no cuadra → `UPSTREAM_ERROR`.
 - Modelo por variable `GEMINI_MODEL`. Salida JSON validada con Zod en ambos lados.
 
 | Método | Ruta | Entrada (resumida) | Salida |
@@ -404,7 +426,7 @@ El cliente solo envía IDs. El backend arma el contexto filtrado por rol. Si fal
 | backend | `APP_TIMEZONE` | Zona IANA del calendario de negocio (por defecto `America/Bogota`): "hoy", días hasta el vencimiento y vencidos se calculan en esta zona |
 | backend | `SHEET_LINK_SECRET` | Enlaces firmados [EXTRA] |
 | backend | `CORS_ORIGINS` | Lista separada por comas |
-| backend | `AI_SERVICE_URL`, `AI_INTERNAL_KEY`, `AI_TIMEOUT_MS` | Llamadas a la IA |
+| backend | `AI_SERVICE_URL`, `AI_INTERNAL_KEY`, `AI_TIMEOUT_MS` | Llamadas a la IA (opcionales: sin URL o clave la IA queda "no configurada" y el sistema sigue; timeout 15000 ms por defecto) |
 | backend | `CLOUDINARY_URL` | Fotos [EXTRA] |
 | backend | `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_OPERATOR_EMAIL`, `SEED_OPERATOR_PASSWORD`, `SEED_SIZE` | Seed (sin valores por defecto; solo las valida el script de seed; `SEED_SIZE=large` solo en local o rama `bench`) |
 | ai | `PORT`, `AI_INTERNAL_KEY`, `GEMINI_API_KEY`, `GEMINI_MODEL` | Solo este repo conoce la clave de Gemini |

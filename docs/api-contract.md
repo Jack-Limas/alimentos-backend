@@ -93,7 +93,7 @@ erDiagram
 | `OrderPriority` | `LOW`, `MEDIUM`, `HIGH`, `URGENT` |
 | `MovementType` | `ENTRY`, `EXIT_DISPATCH`, `EXIT_WASTE`, `ADJUSTMENT`, `RETURN` |
 | `ProposalStatus` | `DRAFT`, `CONFIRMED`, `DISCARDED` |
-| `Strategy` | `RULES`, `AI_ASSISTED` |
+| `Strategy` | `BALANCED`, `URGENCY_FIRST`, `WASTE_FIRST`, `AI_ASSISTED` (este último llega en la fase 3) |
 
 **Máquina de estados de `Order`**
 
@@ -163,7 +163,7 @@ El access token es un JWT `{ sub, role }` firmado con `JWT_ACCESS_SECRET` (durac
 ### 4.3 Productos — [OBL]
 | Método | Ruta | Rol | Notas |
 |---|---|---|---|
-| GET | `/products` | A, O | filtros: `search, category, status, stockStatus=LOW\|OUT, expiringWithinDays` |
+| GET | `/products` | A, O | filtros: `search, category, status, stockStatus=LOW\|OUT, wasteRisk=HIGH\|LOW\|NONE, expiringWithinDays` |
 | GET | `/products/:id` | A, O | incluye `lots[]` ordenados por `expiryDate` |
 | POST | `/products` | A | `{ name, category, unit, minStock }` |
 | PATCH | `/products/:id` | A | campos editables + `status` |

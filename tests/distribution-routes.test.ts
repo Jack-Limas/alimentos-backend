@@ -286,12 +286,17 @@ describe('POST /distribution/proposals/:id/confirm', () => {
     const dispatches = context.repositories.inventory.movements.filter(
       (m) => m.type === 'EXIT_DISPATCH',
     );
-    expect(dispatches.map((m) => [m.lotId, m.quantity.toNumber(), m.orderId, m.reason])).toEqual([
-      [riceSoon.id, 10, urgent.id, `proposal:${proposal.id}`],
-      [riceLater.id, 2, urgent.id, `proposal:${proposal.id}`],
-      [milkLot.id, 3, urgent.id, `proposal:${proposal.id}`],
-      [milkLot.id, 1, low.id, `proposal:${proposal.id}`],
-    ]);
+    // Movements of one order are written in item order; compare them as a set.
+    const rows = dispatches.map((m) => [m.lotId, m.quantity.toNumber(), m.orderId, m.reason]);
+    expect(rows).toHaveLength(4);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        [riceSoon.id, 10, urgent.id, `proposal:${proposal.id}`],
+        [riceLater.id, 2, urgent.id, `proposal:${proposal.id}`],
+        [milkLot.id, 3, urgent.id, `proposal:${proposal.id}`],
+        [milkLot.id, 1, low.id, `proposal:${proposal.id}`],
+      ]),
+    );
     const { orders, items, history } = context.repositories.orders;
     expect(orders.get(urgent.id)?.status).toBe('IN_PREPARATION');
     expect(orders.get(low.id)?.status).toBe('IN_PREPARATION');

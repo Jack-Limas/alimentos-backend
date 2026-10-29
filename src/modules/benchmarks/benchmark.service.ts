@@ -11,7 +11,8 @@ export const BENCHMARK_MIN_SIZE = 1_000;
  * The main-thread run blocks the whole server (every user, every request)
  * for its duration. 30,000 orders take about 1.1 s on a laptop and should
  * stay around 2 s on a small cloud instance; past that the demo would be an
- * outage, so the size is capped here.
+ * outage, so the size is capped here. BENCHMARK_MAX_SIZE lowers it (8000 on
+ * Render's free plan, whose CPU is a fraction of a core).
  */
 export const BENCHMARK_MAX_SIZE = 30_000;
 /** A tiny task first, so worker start-up never counts in the measurement. */

@@ -12,10 +12,8 @@ export const benchmarkRoutes: FastifyPluginCallback<BenchmarkRoutesOptions> = (
   options,
   done,
 ) => {
-  app.post(
-    '/worker-threads',
-    { preHandler: [app.authenticate, app.authorize('ADMIN')] },
-    options.controller.workerThreads,
-  );
+  const adminOnly = { preHandler: [app.authenticate, app.authorize('ADMIN')] };
+  app.get('/limits', adminOnly, options.controller.limits);
+  app.post('/worker-threads', adminOnly, options.controller.workerThreads);
   done();
 };

@@ -11,6 +11,7 @@ import {
   call,
   type InventoryTestContext,
 } from './helpers/inventory-fixtures.js';
+import { ADMIN, buildAuthTestApp, login } from './helpers/auth-fixtures.js';
 import { auditActions } from './helpers/order-fixtures.js';
 
 const busy = (ms: number) => {
@@ -88,5 +89,30 @@ describe('POST /benchmarks/worker-threads', { timeout: 60_000 }, () => {
 
   it('is ADMIN only', async () => {
     expect((await run({ size: 1_000 }, context.operatorToken)).statusCode).toBe(403);
+    const limits = (token: string) => call(context.app, token, 'GET', '/api/v1/benchmarks/limits');
+    expect((await limits(context.operatorToken)).statusCode).toBe(403);
+  });
+
+  it('exposes its limits for the frontend', async () => {
+    const res = await call(context.app, context.adminToken, 'GET', '/api/v1/benchmarks/limits');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      data: { minSize: BENCHMARK_MIN_SIZE, maxSize: BENCHMARK_MAX_SIZE },
+    });
+  });
+});
+
+describe('BENCHMARK_MAX_SIZE', () => {
+  it('lowers the maximum, in the limits and in the validation', async () => {
+    const context = await buildAuthTestApp({ env: { BENCHMARK_MAX_SIZE: 8_000 } });
+    const token = (await login(context.app, ADMIN)).json<{ accessToken: string }>().accessToken;
+    const limits = await call(context.app, token, 'GET', '/api/v1/benchmarks/limits');
+    expect(limits.json()).toEqual({ data: { minSize: BENCHMARK_MIN_SIZE, maxSize: 8_000 } });
+    const tooBig = await call(context.app, token, 'POST', '/api/v1/benchmarks/worker-threads', {
+      size: 8_001,
+    });
+    expect(tooBig.statusCode).toBe(400);
+    expect(JSON.stringify(tooBig.json())).toContain('8000');
+    await context.app.close();
   });
 });

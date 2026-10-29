@@ -379,6 +379,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     prefix: `${API_PREFIX}/benchmarks`,
     controller: createBenchmarkController(
       createBenchmarkService({ pool: taskPool, audit: auditService }),
+      env.BENCHMARK_MAX_SIZE,
     ),
   });
 

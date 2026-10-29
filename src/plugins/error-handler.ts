@@ -18,6 +18,7 @@ const STATUS_TO_CODE: Partial<Record<number, ErrorCode>> = {
   403: 'FORBIDDEN',
   404: 'NOT_FOUND',
   409: 'DUPLICATE',
+  413: 'PAYLOAD_TOO_LARGE',
   429: 'TOO_MANY_REQUESTS',
 };
 

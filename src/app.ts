@@ -109,6 +109,8 @@ import { PUBLIC_RATE_LIMIT } from './shared/http/rate-limiter.js';
 import { createLazyTaskPool, type TaskPool } from './workers/index.js';
 
 export const API_PREFIX = '/api/v1';
+/** Largest JSON body accepted (Fastify's default, set explicitly): nothing in the API needs more. */
+export const BODY_LIMIT_BYTES = 1_048_576;
 
 export interface AppRepositories {
   users: UserRepository;
@@ -138,7 +140,12 @@ export interface AppDeps {
     | 'AI_INTERNAL_KEY'
     | 'AI_TIMEOUT_MS'
   > &
-    Partial<Pick<Env, 'WORKER_POOL_SIZE' | 'WORKER_TASK_TIMEOUT_MS'>>;
+    Partial<
+      Pick<
+        Env,
+        'WORKER_POOL_SIZE' | 'WORKER_TASK_TIMEOUT_MS' | 'TRUST_PROXY' | 'BENCHMARK_MAX_SIZE'
+      >
+    >;
   /** Defaults to a real `SELECT 1` through Prisma. Tests inject a fake. */
   checkDatabase?: DatabaseCheck;
   /** Defaults to the Prisma implementations. Tests inject in-memory ones. */
@@ -157,6 +164,17 @@ export interface AppDeps {
   ai?: { fetch?: typeof fetch; now?: () => number; limiter?: RateLimiter };
 }
 
+/**
+ * TRUST_PROXY as Fastify expects it: `true` trusts the whole X-Forwarded-For
+ * chain; a number N trusts the N closest hops (the same rule proxy-addr applies
+ * to a number, which Fastify's types do not accept).
+ */
+export function trustProxyOption(
+  value: boolean | number,
+): boolean | ((address: string, hop: number) => boolean) {
+  return typeof value === 'number' ? (_address, hop) => hop < value : value;
+}
+
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const { env } = deps;
 
@@ -164,8 +182,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     logger: deps.logger ?? buildLoggerOptions(env.NODE_ENV),
     // Render (and Cloudflare in front of it) terminate the connection in a proxy.
     // Without trusting X-Forwarded-For, request.ip would be the proxy's address and
-    // the per (email, ip) login limit would lump every user together.
-    trustProxy: true,
+    // the per (email, ip) login limit would lump every user together. TRUST_PROXY
+    // narrows it to the real number of hops (GET /admin/network-info shows them).
+    trustProxy: trustProxyOption(env.TRUST_PROXY ?? true),
+    bodyLimit: BODY_LIMIT_BYTES,
   });
 
   let checkDatabase = deps.checkDatabase;

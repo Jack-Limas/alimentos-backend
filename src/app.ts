@@ -49,6 +49,7 @@ import {
   distributionRoutes,
   type DistributionRepository,
 } from './modules/distribution/index.js';
+import { createImpactService, publicRoutes } from './modules/public/index.js';
 import {
   benchmarkRoutes,
   createBenchmarkController,
@@ -104,6 +105,7 @@ import errorHandler from './plugins/error-handler.js';
 import security from './plugins/security.js';
 import serverTiming from './plugins/server-timing.js';
 import { systemClock, type Clock } from './shared/clock.js';
+import { PUBLIC_RATE_LIMIT } from './shared/http/rate-limiter.js';
 import { createLazyTaskPool, type TaskPool } from './workers/index.js';
 
 export const API_PREFIX = '/api/v1';
@@ -147,6 +149,8 @@ export interface AppDeps {
   logger?: NonNullable<FastifyServerOptions['logger']>;
   /** Worker threads for reports and the benchmark (lazy by default). */
   taskPool?: TaskPool;
+  /** Rate limit of GET /public/impact per IP (tests inject one with a fake clock). */
+  publicLimiter?: RateLimiter;
   /** Tests inject a fake fetch for alimentos-ai, a clock for its cool-down and a limiter. */
   ai?: { fetch?: typeof fetch; now?: () => number; limiter?: RateLimiter };
 }
@@ -352,6 +356,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     controller: createBenchmarkController(
       createBenchmarkService({ pool: taskPool, audit: auditService }),
     ),
+  });
+
+  await app.register(publicRoutes, {
+    prefix: `${API_PREFIX}/public`,
+    impact: createImpactService({
+      reports: repositories.reports,
+      clock,
+      timeZone: env.APP_TIMEZONE,
+    }),
+    limiter: deps.publicLimiter ?? createRateLimiter(PUBLIC_RATE_LIMIT),
   });
 
   const metricsService = createMetricsService({

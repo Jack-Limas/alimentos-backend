@@ -89,6 +89,20 @@ Conventions for anyone (human or AI assistant) working in this repository.
 - The main-thread half of the benchmark blocks the server on purpose: keep the size cap and the
   one-at-a-time lock.
 
+## Security, roles and demo data
+
+- Every new route goes into `tests/role-matrix.cases.ts` with its status for anonymous, OPERATOR
+  and ADMIN; then `npm run docs:role-matrix`. The test fails on a route missing from the table.
+- Every input (params, query, body) is parsed with Zod in the controller. Bodies are capped at
+  1 MiB (`BODY_LIMIT_BYTES`).
+- `TRUST_PROXY` is `true` or a hop count; never trust a client-sent IP header otherwise.
+- Seeds and maintenance scripts print the database host and counts only. Scripts that change
+  data in place (`seed:refresh-demo`, `seed:bench`) require `--confirm-host`.
+- `seed:history` and `seed:refresh-demo` must stay idempotent (one run per day changes nothing
+  the second time).
+- `smoke:prod` never discards a check's failure and never prints credentials or tokens; anything
+  it creates (proposals) is discarded so production stock never moves.
+
 ## Errors
 
 - Response format: `{ "error": { "code": "STRING", "message": "text", "details": {} } }`.

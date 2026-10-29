@@ -18,6 +18,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "seed:bench": "tsx prisma/seed-bench.ts",
+    "seed:history": "tsx prisma/seed-history.ts",
     "docs:role-matrix": "tsx scripts/role-matrix.ts"
   },
   "dependencies": {

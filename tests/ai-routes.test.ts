@@ -28,7 +28,13 @@ interface AiCall {
 
 /** A fake alimentos-ai: answers from the request, or fails like a dead service. */
 function fakeAi() {
-  const state = { down: false, tieBreakOrder: [] as string[], calls: [] as AiCall[] };
+  const state = {
+    down: false,
+    /** Answer every call with this refusal of the AI service itself (e.g. a wrong key). */
+    refuse: null as { status: number; code: string } | null,
+    tieBreakOrder: [] as string[],
+    calls: [] as AiCall[],
+  };
   const meta = {
     model: 'gemini-fake',
     promptVersion: 'test@1',
@@ -47,6 +53,14 @@ function fakeAi() {
     const body = JSON.parse(init?.body as string) as Record<string, unknown>;
     state.calls.push({ path, body });
     if (state.down) return Promise.reject(new TypeError('fetch failed'));
+    if (state.refuse) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: { code: state.refuse.code, message: 'refused' } }), {
+          status: state.refuse.status,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    }
     switch (path) {
       case '/v1/proposal-explanation':
         return Promise.resolve(
@@ -201,6 +215,22 @@ describe('AI_ASSISTED proposals', () => {
     expect(ctx.ai.state.calls).toHaveLength(2);
     expect(auditActions(ctx)).toContain('AI_REQUESTED');
   });
+
+  it('names a rejected internal key instead of UPSTREAM_ERROR, with what the AI answered', async () => {
+    const ctx = await setup();
+    seedTies(ctx);
+    ctx.ai.state.refuse = { status: 401, code: 'UNAUTHORIZED' };
+
+    const res = await create(ctx, { strategy: 'AI_ASSISTED' });
+
+    expect(res.statusCode).toBe(201);
+    expect(dataOf(res)).toMatchObject({
+      degraded: true,
+      summary: { aiError: 'AUTH_REJECTED', aiErrorDetail: 'HTTP 401 UNAUTHORIZED' },
+    });
+    // A wrong key cannot fix itself: no retry.
+    expect(ctx.ai.state.calls).toHaveLength(1);
+  });
 });
 
 describe('POST /ai/proposals/:id/explanation', () => {
@@ -255,6 +285,16 @@ describe('POST /ai/proposals/:id/explanation', () => {
 
     const missing = await post(ctx, '/proposals/00000000-0000-4000-8000-000000000000/explanation');
     expect(missing.statusCode).toBe(404);
+
+    ctx.ai.state.down = false;
+    ctx.ai.state.refuse = { status: 404, code: 'NOT_FOUND' };
+    const wrongUrl = await post(ctx, `/proposals/${proposal.id}/explanation?refresh=true`);
+    expect(wrongUrl.json()).toMatchObject({
+      error: {
+        code: 'AI_UNAVAILABLE',
+        details: { category: 'ENDPOINT_NOT_FOUND', upstream: 'HTTP 404 NOT_FOUND' },
+      },
+    });
   });
 });
 

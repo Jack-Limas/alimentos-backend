@@ -205,9 +205,14 @@ export function createDistributionService({
     const tieGroups = findTieGroups(
       base.ranking.map((entry) => ({ key: entry.orderId, score: entry.score })),
     ).length;
-    const withSummary = (result: ProposalResult, aiError?: string): ProposalResult => ({
+    const withSummary = (result: ProposalResult, failure?: AiError): ProposalResult => ({
       ...result,
-      summary: { ...result.summary, tieGroups, ...(aiError ? { aiError } : {}) },
+      summary: {
+        ...result.summary,
+        tieGroups,
+        ...(failure ? { aiError: failure.category } : {}),
+        ...(failure?.upstream ? { aiErrorDetail: failure.upstream } : {}),
+      },
     });
 
     // Nothing to plan: no call to the AI.
@@ -240,7 +245,7 @@ export function createDistributionService({
       };
     } catch (error) {
       if (!(error instanceof AiError)) throw error;
-      return { result: withSummary(base, error.category), degraded: true, aiInsight: null };
+      return { result: withSummary(base, error), degraded: true, aiInsight: null };
     }
   }
 

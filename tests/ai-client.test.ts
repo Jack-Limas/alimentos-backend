@@ -119,15 +119,57 @@ describe('createAiClient', () => {
     expect(calls).toHaveLength(1);
   });
 
-  it('does not retry a rejected internal key or a 400', async () => {
-    for (const failure of [
-      json(401, { error: { code: 'UNAUTHORIZED' } }),
-      json(400, { error: { code: 'VALIDATION_ERROR' } }),
-    ]) {
-      const { fetch, calls } = scripted(failure);
-      expect((await categoryOf(client(fetch).briefing(input))).category).toBe('UPSTREAM_ERROR');
+  it.each([
+    [401, 'UNAUTHORIZED', 'AUTH_REJECTED'],
+    [403, 'FORBIDDEN', 'AUTH_REJECTED'],
+    [404, 'NOT_FOUND', 'ENDPOINT_NOT_FOUND'],
+    [400, 'VALIDATION_ERROR', 'INVALID_REQUEST'],
+    [413, 'PAYLOAD_TOO_LARGE', 'INVALID_REQUEST'],
+  ] as const)(
+    'names a %i %s refusal of the AI service %s, without retrying it',
+    async (status, code, category) => {
+      const { fetch, calls } = scripted(json(status, { error: { code, message: 'nope' } }));
+
+      const error = await categoryOf(client(fetch).briefing(input));
+      expect(error).toMatchObject({ category, upstream: `HTTP ${String(status)} ${code}` });
       expect(calls).toHaveLength(1);
-    }
+    },
+  );
+
+  it('cools down after the AI service rate limit (429) like after a quota', async () => {
+    let clock = 0;
+    const { fetch, calls } = scripted(
+      json(
+        429,
+        { error: { code: 'TOO_MANY_REQUESTS', retryAfterSec: 20 } },
+        { 'retry-after': '20' },
+      ),
+      json(200, okBody),
+    );
+    const ai = client(fetch, () => clock);
+
+    expect(await categoryOf(ai.briefing(input))).toMatchObject({
+      category: 'RATE_LIMITED',
+      retryAfterSec: 20,
+      upstream: 'HTTP 429 TOO_MANY_REQUESTS',
+    });
+    clock = 10_000;
+    expect((await categoryOf(ai.briefing(input))).category).toBe('RATE_LIMITED');
+    expect(calls).toHaveLength(1);
+    clock = 21_000;
+    await expect(ai.briefing(input)).resolves.toMatchObject({
+      data: { summary: 'Todo en orden.' },
+    });
+  });
+
+  it('keeps UPSTREAM_ERROR (with one retry) for a 5xx without a category', async () => {
+    const { fetch, calls } = scripted(json(503, { error: { code: 'INTERNAL_ERROR' } }));
+
+    expect(await categoryOf(client(fetch).briefing(input))).toMatchObject({
+      category: 'UPSTREAM_ERROR',
+      upstream: 'HTTP 503 INTERNAL_ERROR',
+    });
+    expect(calls).toHaveLength(2);
   });
 
   it('treats an answer that does not match the schema as UPSTREAM_ERROR', async () => {

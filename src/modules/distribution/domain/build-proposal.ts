@@ -57,6 +57,8 @@ export interface ProposalSummary {
   tieGroups?: number;
   /** AI_ASSISTED only: why the AI failed (the plan is the BALANCED one, degraded). */
   aiError?: string;
+  /** What alimentos-ai answered when it failed (e.g. "HTTP 401 UNAUTHORIZED"). */
+  aiErrorDetail?: string;
 }
 
 export interface ProposalResult {

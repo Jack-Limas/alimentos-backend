@@ -1,5 +1,10 @@
 import type { z } from 'zod';
-import { AiError, isAiErrorCategory, RETRYABLE_CATEGORIES } from './ai-error.js';
+import {
+  AiError,
+  isAiErrorCategory,
+  RETRYABLE_CATEGORIES,
+  type AiErrorCategory,
+} from './ai-error.js';
 import {
   aiErrorBodySchema,
   aiMetaSchema,
@@ -63,18 +68,40 @@ async function failureOf(response: Response): Promise<AttemptError> {
   const category = parsed.success
     ? (parsed.data.error.category ?? parsed.data.error.code)
     : undefined;
+  const code = parsed.success ? parsed.data.error.code : undefined;
+  const upstream = `HTTP ${String(response.status)}${code ? ` ${code}` : ''}`;
+  const retryAfter = () =>
+    retryAfterOf(
+      response.headers.get('retry-after'),
+      parsed.success ? parsed.data.error.retryAfterSec : undefined,
+    );
   if (isAiErrorCategory(category) && category !== 'NOT_CONFIGURED') {
-    const retryAfter =
-      category === 'QUOTA_EXCEEDED'
-        ? retryAfterOf(
-            response.headers.get('retry-after'),
-            parsed.success ? parsed.data.error.retryAfterSec : undefined,
-          )
-        : undefined;
-    return new AttemptError(new AiError(category, retryAfter), RETRYABLE_CATEGORIES.has(category));
+    const wait = category === 'QUOTA_EXCEEDED' ? retryAfter() : undefined;
+    return new AttemptError(
+      new AiError(category, wait, upstream),
+      RETRYABLE_CATEGORIES.has(category),
+    );
   }
-  // Wrong internal key, a 400 from the service or an unknown answer: only a 5xx may pass on retry.
-  return new AttemptError(new AiError('UPSTREAM_ERROR'), response.status >= 500);
+  // Refusals of alimentos-ai itself: a retry cannot fix them, and each has its own cause.
+  const refusal: AiErrorCategory | null =
+    response.status === 401 || response.status === 403
+      ? 'AUTH_REJECTED'
+      : response.status === 404
+        ? 'ENDPOINT_NOT_FOUND'
+        : response.status === 429
+          ? 'RATE_LIMITED'
+          : [400, 413, 422].includes(response.status)
+            ? 'INVALID_REQUEST'
+            : null;
+  if (refusal) {
+    const wait = refusal === 'RATE_LIMITED' ? retryAfter() : undefined;
+    return new AttemptError(new AiError(refusal, wait, upstream), false);
+  }
+  // Any other answer: only a 5xx may pass on retry.
+  return new AttemptError(
+    new AiError('UPSTREAM_ERROR', undefined, upstream),
+    response.status >= 500,
+  );
 }
 
 /** A client that never calls anything: the AI is simply "not configured". */
@@ -100,6 +127,8 @@ export function createAiClient({
   const base = baseUrl.replace(/\/+$/, '');
   const key = internalKey;
   let blockedUntil = 0;
+  // What started the cool-down: Gemini's quota or alimentos-ai's own rate limit.
+  let blockedBy: 'QUOTA_EXCEEDED' | 'RATE_LIMITED' = 'QUOTA_EXCEEDED';
 
   async function attempt<T>(path: string, body: unknown, schema: z.ZodType<T>) {
     const controller = new AbortController();
@@ -115,8 +144,15 @@ export function createAiClient({
         signal: controller.signal,
       });
     } catch {
-      const category = controller.signal.aborted ? 'TIMEOUT' : 'UPSTREAM_ERROR';
-      throw new AttemptError(new AiError(category), true);
+      const aborted = controller.signal.aborted;
+      throw new AttemptError(
+        new AiError(
+          aborted ? 'TIMEOUT' : 'UPSTREAM_ERROR',
+          undefined,
+          aborted ? `no answer in ${String(timeoutMs)} ms` : 'network error',
+        ),
+        true,
+      );
     } finally {
       clearTimeout(timer);
     }
@@ -129,14 +165,21 @@ export function createAiClient({
     const data = schema.safeParse(rest);
     const parsedMeta = aiMetaSchema.safeParse(meta);
     if (!data.success || !parsedMeta.success) {
-      throw new AttemptError(new AiError('UPSTREAM_ERROR'), true);
+      throw new AttemptError(
+        new AiError(
+          'UPSTREAM_ERROR',
+          undefined,
+          `HTTP ${String(response.status)} with an unexpected body`,
+        ),
+        true,
+      );
     }
     return { data: data.data, meta: parsedMeta.data };
   }
 
   async function call<T>(path: string, body: unknown, schema: z.ZodType<T>): Promise<AiAnswer<T>> {
     const waitMs = blockedUntil - now();
-    if (waitMs > 0) throw new AiError('QUOTA_EXCEEDED', Math.ceil(waitMs / 1000));
+    if (waitMs > 0) throw new AiError(blockedBy, Math.ceil(waitMs / 1000));
 
     for (let attemptNumber = 1; ; attemptNumber += 1) {
       try {
@@ -144,10 +187,11 @@ export function createAiClient({
       } catch (failure) {
         if (!(failure instanceof AttemptError)) throw failure;
         const { error } = failure;
-        if (error.category === 'QUOTA_EXCEEDED') {
+        if (error.category === 'QUOTA_EXCEEDED' || error.category === 'RATE_LIMITED') {
           const seconds = error.retryAfterSec ?? DEFAULT_QUOTA_COOLDOWN_SEC;
           blockedUntil = now() + seconds * 1000;
-          throw new AiError('QUOTA_EXCEEDED', seconds);
+          blockedBy = error.category;
+          throw new AiError(error.category, seconds, error.upstream);
         }
         if (!failure.retryable || attemptNumber >= MAX_ATTEMPTS) throw error;
       }

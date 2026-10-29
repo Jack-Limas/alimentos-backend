@@ -59,6 +59,10 @@ export const envSchema = z.object({
   AI_INTERNAL_KEY: optionalString,
   AI_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
 
+  // Worker threads for reports and the benchmark (optional)
+  WORKER_POOL_SIZE: z.coerce.number().int().min(1).max(8).default(2),
+  WORKER_TASK_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(30_000),
+
   // Product photos [EXTRA]
   CLOUDINARY_URL: optionalString,
 

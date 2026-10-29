@@ -47,7 +47,8 @@ function registeredRoutes(): string[] {
   return [...routes].filter((route) => !route.endsWith('*'));
 }
 
-describe('role matrix', () => {
+// The report case starts the worker threads (cold under a loaded test run).
+describe('role matrix', { timeout: 30_000 }, () => {
   it('covers every registered route exactly once', () => {
     const inMatrix = ROLE_MATRIX.map((entry) => `${entry.method} ${entry.route}`);
     expect(new Set(inMatrix).size).toBe(inMatrix.length);

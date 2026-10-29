@@ -75,6 +75,20 @@ Conventions for anyone (human or AI assistant) working in this repository.
 - Never log or document the value of `AI_INTERNAL_KEY`; tests use a fake `fetch`, never the real
   service.
 
+## Worker threads, reports and metrics
+
+- CPU-heavy work (report formatting, the benchmark analysis) runs in the `worker_threads` pool
+  (`src/workers/`); database reads stay on the main thread and only plain data crosses to the
+  worker (no classes, no Prisma objects, no Dates).
+- Add a task to `src/workers/tasks.ts` (typed in `Tasks`). Worker code must run both from
+  `src/*.ts` (tsx bootstrap) and from `dist/*.js`; never hardcode one extension.
+- CSV output always goes through `toCsv` (BOM, locale separator, escaping, CSV injection guard).
+- Metrics are keyed by route pattern (`request.routeOptions.url`), never by the URL with IDs.
+- Public endpoints return aggregates only: no names, ids, emails or phones; keep their cache
+  headers and rate limit.
+- The main-thread half of the benchmark blocks the server on purpose: keep the size cap and the
+  one-at-a-time lock.
+
 ## Errors
 
 - Response format: `{ "error": { "code": "STRING", "message": "text", "details": {} } }`.

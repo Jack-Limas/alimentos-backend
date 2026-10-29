@@ -48,3 +48,33 @@ export function fromDbDate(date: Date): CalendarDate {
 export function toDbDate(date: CalendarDate): Date {
   return new Date(toUtcMs(date));
 }
+
+/**
+ * The instant when `date` starts in `timeZone` (midnight local time). In
+ * Bogota (UTC-5) 2026-10-28 starts at 2026-10-28T05:00:00Z. Uses the zone
+ * offset at that moment, so it also works for zones with daylight saving.
+ */
+export function startOfDayIn(date: CalendarDate, timeZone: string): Date {
+  const guess = toUtcMs(date);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(new Date(guess));
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((candidate) => candidate.type === type)?.value ?? 0);
+  const local = Date.UTC(
+    part('year'),
+    part('month') - 1,
+    part('day'),
+    part('hour'),
+    part('minute'),
+    part('second'),
+  );
+  return new Date(guess - (local - guess));
+}

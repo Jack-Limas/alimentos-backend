@@ -4,6 +4,7 @@ export {
   daysBetween,
   fromDbDate,
   isCalendarDate,
+  startOfDayIn,
   todayIn,
   toDbDate,
   type CalendarDate,

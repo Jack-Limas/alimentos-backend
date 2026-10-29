@@ -4,6 +4,7 @@ import {
   daysBetween,
   fromDbDate,
   isCalendarDate,
+  startOfDayIn,
   toDbDate,
   todayIn,
 } from '../src/modules/inventory/domain/calendar.js';
@@ -67,5 +68,24 @@ describe('date helpers', () => {
   it('round-trips @db.Date values as UTC midnight', () => {
     expect(toDbDate('2026-10-26').toISOString()).toBe('2026-10-26T00:00:00.000Z');
     expect(fromDbDate(new Date('2026-10-26T00:00:00.000Z'))).toBe('2026-10-26');
+  });
+});
+
+describe('startOfDayIn', () => {
+  it('gives the instant when a business day starts in the zone', () => {
+    expect(startOfDayIn('2026-10-28', 'America/Bogota').toISOString()).toBe(
+      '2026-10-28T05:00:00.000Z',
+    );
+    expect(startOfDayIn('2026-10-28', 'UTC').toISOString()).toBe('2026-10-28T00:00:00.000Z');
+    expect(startOfDayIn('2026-01-01', 'Asia/Tokyo').toISOString()).toBe('2025-12-31T15:00:00.000Z');
+  });
+
+  it('follows daylight saving changes', () => {
+    expect(startOfDayIn('2026-07-01', 'America/New_York').toISOString()).toBe(
+      '2026-07-01T04:00:00.000Z',
+    );
+    expect(startOfDayIn('2026-12-01', 'America/New_York').toISOString()).toBe(
+      '2026-12-01T05:00:00.000Z',
+    );
   });
 });

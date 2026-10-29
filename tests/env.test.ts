@@ -75,6 +75,26 @@ describe('parseEnv', () => {
     );
   });
 
+  it('defaults TRUST_PROXY to true and accepts a number of hops', () => {
+    expect(parseEnv(validEnv).TRUST_PROXY).toBe(true);
+    expect(parseEnv({ ...validEnv, TRUST_PROXY: 'true' }).TRUST_PROXY).toBe(true);
+    expect(parseEnv({ ...validEnv, TRUST_PROXY: '2' }).TRUST_PROXY).toBe(2);
+    expect(() => parseEnv({ ...validEnv, TRUST_PROXY: 'false' })).toThrow(/TRUST_PROXY/);
+    expect(() => parseEnv({ ...validEnv, TRUST_PROXY: '0' })).toThrow(/TRUST_PROXY/);
+    expect(() => parseEnv({ ...validEnv, TRUST_PROXY: '10.0.0.1' })).toThrow(/TRUST_PROXY/);
+  });
+
+  it('defaults BENCHMARK_MAX_SIZE to 30000 and keeps it between 1000 and 30000', () => {
+    expect(parseEnv(validEnv).BENCHMARK_MAX_SIZE).toBe(30_000);
+    expect(parseEnv({ ...validEnv, BENCHMARK_MAX_SIZE: '8000' }).BENCHMARK_MAX_SIZE).toBe(8_000);
+    expect(() => parseEnv({ ...validEnv, BENCHMARK_MAX_SIZE: '50000' })).toThrow(
+      /BENCHMARK_MAX_SIZE/,
+    );
+    expect(() => parseEnv({ ...validEnv, BENCHMARK_MAX_SIZE: '500' })).toThrow(
+      /BENCHMARK_MAX_SIZE/,
+    );
+  });
+
   it('never includes variable values in the error message', () => {
     const secret = 'not-a-url-but-a-secret';
 

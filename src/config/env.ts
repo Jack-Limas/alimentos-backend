@@ -25,6 +25,18 @@ const corsOrigins = z
   )
   .pipe(z.array(z.url()).min(1));
 
+/**
+ * TRUST_PROXY: "true" trusts every proxy in X-Forwarded-For (Render's default
+ * setup); a number trusts that many hops, the safer setting once the real
+ * chain is known (see GET /admin/network-info and docs/deployment.md).
+ */
+const trustProxy = z
+  .string()
+  .trim()
+  .regex(/^(true|[1-9]\d?)$/, 'must be "true" or a number of proxy hops (1-99)')
+  .default('true')
+  .transform((value) => (value === 'true' ? true : Number(value)));
+
 export const envSchema = z.object({
   // Required since phase 0
   NODE_ENV: z.enum(['development', 'test', 'production']),
@@ -32,6 +44,7 @@ export const envSchema = z.object({
   DIRECT_URL: z.url(),
   CORS_ORIGINS: corsOrigins,
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
+  TRUST_PROXY: trustProxy,
 
   // Authentication. Refresh tokens are opaque (hashed in the DB), so they need no secret.
   JWT_ACCESS_SECRET: z.string().min(32, 'must be at least 32 characters long'),
@@ -62,6 +75,8 @@ export const envSchema = z.object({
   // Worker threads for reports and the benchmark (optional)
   WORKER_POOL_SIZE: z.coerce.number().int().min(1).max(8).default(2),
   WORKER_TASK_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(30_000),
+  // Largest benchmark size: its main-thread run blocks the server for everyone (8000 on a free plan).
+  BENCHMARK_MAX_SIZE: z.coerce.number().int().min(1_000).max(30_000).default(30_000),
 
   // Product photos [EXTRA]
   CLOUDINARY_URL: optionalString,

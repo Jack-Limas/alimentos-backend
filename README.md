@@ -133,12 +133,13 @@ Plantilla en [.env.example](.env.example). Nunca se commitean valores reales.
 | `AI_SERVICE_URL`         | No          | URL de `alimentos-ai`; sin ella la IA queda desactivada  |
 | `AI_INTERNAL_KEY`        | No          | Clave enviada en `X-Internal-Key` (igual en ambos repos) |
 | `AI_TIMEOUT_MS`          | No          | Timeout por intento de la IA (15000 por defecto)         |
+| `WORKER_POOL_SIZE`       | No          | Workers del pool de reportes y benchmark (2 por defecto) |
+| `WORKER_TASK_TIMEOUT_MS` | No          | Timeout por tarea del pool (30000 por defecto)           |
 | `CLOUDINARY_URL`         | [EXTRA]     | Fotos de productos                                       |
 | `SEED_ADMIN_EMAIL`       | Seed        | Email del admin demo (sin valor por defecto)             |
 | `SEED_ADMIN_PASSWORD`    | Seed        | 12+ caracteres con mayúscula, minúscula, número, símbolo |
 | `SEED_OPERATOR_EMAIL`    | Seed        | Email del operador demo (sin valor por defecto)          |
 | `SEED_OPERATOR_PASSWORD` | Seed        | Contraseña del operador demo (sin valor por defecto)     |
-| `SEED_SIZE`              | Seed        | `small` · `large` (`large` solo en local o rama `bench`) |
 
 Si falta una variable obligatoria el servidor no arranca e indica cuál falta (sin mostrar valores).
 Las `SEED_*` solo las valida el script de seed.
@@ -155,6 +156,7 @@ Las `SEED_*` solo las valida el script de seed.
 | `npm run typecheck`    | `tsc --noEmit`                       |
 | `npm run format`       | Formatea con Prettier                |
 | `npm run format:check` | Verifica el formato (lo usa CI)      |
+| `npm run seed:bench`   | Seed grande para la rama `bench`     |
 
 ## Puertos
 
@@ -264,7 +266,11 @@ etc. Cada uno tiene categoría, unidad y stock mínimo coherentes.
   dos veces no duplica nada.
 - Las cantidades salen de un generador pseudoaleatorio con semilla fija: son reproducibles.
 - Los movimientos demo quedan a nombre del admin del seed.
-- `SEED_SIZE=large` (seed grande) llega en una fase posterior.
+- Seed grande (solo rama `bench` de Neon): `npm run seed:bench -- --confirm-host=<host>` crea
+  ~2.000 productos, 20.000 lotes (con su movimiento `ENTRY`) y 5.000 pedidos `PENDING` con
+  `createMany` por lotes de 1.000. Se niega si `--confirm-host` no coincide con el host de
+  `DATABASE_URL` o si `NODE_ENV=production`, y no repite si ya existen productos `Bench …`. Muestra
+  solo el host (nunca la URL) y el tiempo de cada tabla. Necesita el seed normal antes.
 
 ### Clientes y pedidos demo (seed)
 
@@ -390,6 +396,47 @@ IDs y `locale`; el contexto se arma desde la BD.
 
 En local: `alimentos-ai` en el puerto 4100, `AI_SERVICE_URL=http://localhost:4100` y la misma
 `AI_INTERNAL_KEY` en los dos `.env`.
+
+## Worker threads, reportes y benchmark
+
+- **Pool propio** (`src/workers/`, sin librerías): `WORKER_POOL_SIZE` workers (2), cola FIFO, una
+  tarea por worker, timeout por tarea (`WORKER_TASK_TIMEOUT_MS`) y reinicio del worker si muere o
+  se pasa del tiempo (una tarea en un hilo no se puede detener: se termina el worker). Cada worker
+  avisa `ready` al cargar y solo entonces recibe tareas, así su arranque nunca cuenta en el
+  timeout. El servidor los arranca al iniciar; en las pruebas se crean al primer uso.
+- **Desarrollo y producción**: `resolveWorkerEntry` detecta si corre desde `src/*.ts` (tsx,
+  Vitest) o desde `dist/*.js`. En desarrollo el hilo arranca `tsx-bootstrap.ts` (type stripping
+  de Node), que registra tsx con su API e importa `task-worker.ts`: el flag `--import tsx` no llega
+  a los `worker_threads`. En producción Node ejecuta `dist/workers/task-worker.js` sin flags. Las
+  dos rutas tienen pruebas (y se comprobaron a mano).
+- **Tareas**: `buildReport` (CSV/PDF a partir de datos ya leídos en el hilo principal) y
+  `heavyAnalysis` (métricas + `buildProposal` sobre un snapshot sintético determinista).
+- **Reportes** `GET /api/v1/reports/{inventory|orders|waste}?format=csv|pdf&locale=es|en`
+  (solo ADMIN): CSV con BOM, `;` o `,` según el idioma, escapado RFC 4180 y protección contra CSV
+  injection; PDF con pdfkit, encabezado repetido por página, totales y numeración.
+- **Benchmark** `POST /api/v1/benchmarks/worker-threads { size }` (solo ADMIN, 1.000–30.000): el
+  modo hilo principal bloquea el servidor para todos, por eso el límite y uno a la vez (409).
+
+| Pedidos | Modo           | Duración | Lag máx. / p99 | Deriva de la sonda |
+| ------- | -------------- | -------- | -------------- | ------------------ |
+| 5.000   | Hilo principal | 256 ms   | 256 / 256 ms   | 246 ms             |
+| 5.000   | Pool           | 214 ms   | 26 / 26 ms     | 16 ms              |
+| 15.000  | Hilo principal | 533 ms   | 563 / 563 ms   | 523 ms             |
+| 15.000  | Pool           | 557 ms   | 24 / 24 ms     | 18 ms              |
+| 30.000  | Hilo principal | 1.202 ms | 1.207 / 1.207  | 1.196 ms           |
+| 30.000  | Pool           | 1.212 ms | 25 / 24 ms     | 15 ms              |
+
+(Local, Windows, Node 22; en Windows los timers tienen ~15,6 ms de granularidad, por eso el lag
+base del pool ronda 15–25 ms.)
+
+## Métricas e impacto público
+
+- `GET /api/v1/metrics/api` (ADMIN): p50/p95/p99, conteo y 5xx por **patrón** de ruta (últimas
+  500 duraciones en un buffer circular), memoria, lag del event loop y uptime.
+- `POST /api/v1/metrics/web-vitals` (ADMIN y OPERATOR) y `GET` (ADMIN, p75 por métrica y página).
+- `GET /api/v1/public/impact` (sin login): despachado y "rescatado" por unidad, entregas a tiempo y
+  clientes atendidos por tipo en los últimos 30 días, sin datos personales;
+  `Cache-Control: public, max-age=300`, caché de 60 s en el servidor y 60 peticiones/min por IP.
 
 ## CI
 

@@ -16,7 +16,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "seed:bench": "tsx prisma/seed-bench.ts"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.2",

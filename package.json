@@ -17,7 +17,8 @@
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "seed:bench": "tsx prisma/seed-bench.ts"
+    "seed:bench": "tsx prisma/seed-bench.ts",
+    "docs:role-matrix": "tsx scripts/role-matrix.ts"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.2",

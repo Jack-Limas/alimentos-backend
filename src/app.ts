@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 import { readAppInfo, type AppInfo } from './config/app-info.js';
 import type { Env } from './config/env.js';
 import { buildLoggerOptions } from './config/logger.js';
+import { adminRoutes, createAdminController } from './modules/admin/index.js';
 import {
   aiRoutes,
   createAiClient,
@@ -402,6 +403,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(metricsRoutes, {
     prefix: `${API_PREFIX}/metrics`,
     controller: createMetricsController(metricsService),
+  });
+  await app.register(adminRoutes, {
+    prefix: `${API_PREFIX}/admin`,
+    controller: createAdminController({
+      audit: auditService,
+      trustProxy: env.TRUST_PROXY ?? true,
+    }),
   });
   await app.register(aiRoutes, {
     prefix: `${API_PREFIX}/ai`,

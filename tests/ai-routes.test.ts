@@ -216,6 +216,31 @@ describe('AI_ASSISTED proposals', () => {
     expect(auditActions(ctx)).toContain('AI_REQUESTED');
   });
 
+  it('sends the AI the totals of the plan with its lines (no public API change)', async () => {
+    const ctx = await setup();
+    seedTies(ctx);
+
+    const res = await create(ctx, { strategy: 'AI_ASSISTED' });
+
+    expect(res.statusCode).toBe(201);
+    const sent = ctx.ai.state.calls[0]?.body as {
+      totals: { orders: number; lines: number; full: number; partial: number; unserved: number };
+      lines: unknown[];
+    };
+    const summary = dataOf(res).summary as {
+      ordersFull: number;
+      ordersPartial: number;
+      ordersUnserved: number;
+    };
+    expect(sent.totals).toEqual({
+      orders: summary.ordersFull + summary.ordersPartial + summary.ordersUnserved,
+      lines: sent.lines.length,
+      full: summary.ordersFull,
+      partial: summary.ordersPartial,
+      unserved: summary.ordersUnserved,
+    });
+  });
+
   it('names a rejected internal key instead of UPSTREAM_ERROR, with what the AI answered', async () => {
     const ctx = await setup();
     seedTies(ctx);

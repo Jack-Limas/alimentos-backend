@@ -32,10 +32,23 @@ export interface ExplanationLine {
   reasons: DistributionReason[];
 }
 
+/**
+ * Counts of the whole proposal, so the AI can say "35 pedidos" by copying a
+ * number instead of counting (its guardrail drops figures not in the input).
+ */
+export interface ExplanationTotals {
+  orders: number;
+  lines: number;
+  full: number;
+  partial: number;
+  unserved: number;
+}
+
 export interface ProposalExplanationInput {
   locale: AiLocale;
   role: AiRole;
   strategy: string;
+  totals?: ExplanationTotals;
   lines: ExplanationLine[];
 }
 
@@ -96,7 +109,16 @@ export interface PlanLine {
  */
 export function toExplanationInput(
   lines: readonly PlanLine[],
-  options: { locale: AiLocale; role: AiRole; strategy: string },
+  {
+    orders,
+    ...options
+  }: {
+    locale: AiLocale;
+    role: AiRole;
+    strategy: string;
+    /** The plan's summary counts; with them the input carries `totals`. */
+    orders?: { ordersFull: number; ordersPartial: number; ordersUnserved: number };
+  },
 ): ProposalExplanationInput {
   const byItem = new Map<string, ExplanationLine>();
   for (const line of lines) {
@@ -121,7 +143,23 @@ export function toExplanationInput(
       reasons: [...line.reasons],
     });
   }
-  return { ...options, lines: [...byItem.values()] };
+  const aiLines = [...byItem.values()];
+  return {
+    ...options,
+    ...(orders
+      ? {
+          totals: {
+            orders: orders.ordersFull + orders.ordersPartial + orders.ordersUnserved,
+            // The lines the AI receives (one per order item), not the (item, lot) pairs.
+            lines: aiLines.length,
+            full: orders.ordersFull,
+            partial: orders.ordersPartial,
+            unserved: orders.ordersUnserved,
+          },
+        }
+      : {}),
+    lines: aiLines,
+  };
 }
 
 export interface RescueCandidate {

@@ -226,6 +226,7 @@ export function createDistributionService({
           locale,
           role: actor.role,
           strategy: strategy.name,
+          orders: base.summary,
         }),
         actor,
         proposalId,

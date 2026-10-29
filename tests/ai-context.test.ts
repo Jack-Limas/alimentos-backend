@@ -55,6 +55,31 @@ describe('toExplanationInput', () => {
     expect(json).toContain('"customerType":"HOSPITAL"');
   });
 
+  it('adds the totals of the plan so the AI copies counts instead of counting', () => {
+    const input = toExplanationInput(
+      [line(), line({ recommendedQty: 3.5 }), line({ orderItemId: 'item-2', productName: 'Pan' })],
+      {
+        locale: 'es',
+        role: 'ADMIN',
+        strategy: 'AI_ASSISTED',
+        orders: { ordersFull: 7, ordersPartial: 23, ordersUnserved: 5 },
+      },
+    );
+
+    // lines = what the AI receives (one per order item), not the (item, lot) pairs.
+    expect(input.totals).toEqual({ orders: 35, lines: 2, full: 7, partial: 23, unserved: 5 });
+    expect(Object.keys(input)).toEqual(['locale', 'role', 'strategy', 'totals', 'lines']);
+  });
+
+  it('sends no totals when the plan counts are not given (older callers)', () => {
+    const input = toExplanationInput([line()], {
+      locale: 'es',
+      role: 'ADMIN',
+      strategy: 'BALANCED',
+    });
+    expect(input).not.toHaveProperty('totals');
+  });
+
   it('stops at the AI list limit and clips long names', () => {
     const lines = Array.from({ length: MAX_AI_ITEMS + 5 }, (_, i) =>
       line({ orderItemId: `item-${String(i)}`, productName: 'x'.repeat(300) }),

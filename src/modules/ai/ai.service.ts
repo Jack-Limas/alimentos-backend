@@ -123,6 +123,7 @@ export function createAiService({
         locale,
         role: actor.role,
         strategy: detail.strategy,
+        orders: detail.summary,
       });
       if (input.lines.length === 0) {
         throw new AppError(400, 'VALIDATION_ERROR', 'The proposal has no lines to explain', {

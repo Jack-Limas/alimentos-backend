@@ -87,8 +87,11 @@ import {
 } from './modules/products/index.js';
 import {
   createPrismaReportsRepository,
+  createReportsController,
+  createReportsService,
+  reportsRoutes,
   type ReportsRepository,
-} from './modules/reports/reports.repository.js';
+} from './modules/reports/index.js';
 import { createPrismaUserRepository, type UserRepository } from './modules/users/index.js';
 import apiMetricsPlugin from './plugins/api-metrics.js';
 import auth from './plugins/auth.js';
@@ -96,6 +99,7 @@ import errorHandler from './plugins/error-handler.js';
 import security from './plugins/security.js';
 import serverTiming from './plugins/server-timing.js';
 import { systemClock, type Clock } from './shared/clock.js';
+import { createLazyTaskPool, type TaskPool } from './workers/index.js';
 
 export const API_PREFIX = '/api/v1';
 
@@ -126,7 +130,8 @@ export interface AppDeps {
     | 'AI_SERVICE_URL'
     | 'AI_INTERNAL_KEY'
     | 'AI_TIMEOUT_MS'
-  >;
+  > &
+    Partial<Pick<Env, 'WORKER_POOL_SIZE' | 'WORKER_TASK_TIMEOUT_MS'>>;
   /** Defaults to a real `SELECT 1` through Prisma. Tests inject a fake. */
   checkDatabase?: DatabaseCheck;
   /** Defaults to the Prisma implementations. Tests inject in-memory ones. */
@@ -135,6 +140,8 @@ export interface AppDeps {
   clock?: Clock;
   appInfo?: AppInfo;
   logger?: NonNullable<FastifyServerOptions['logger']>;
+  /** Worker threads for reports and the benchmark (lazy by default). */
+  taskPool?: TaskPool;
   /** Tests inject a fake fetch for alimentos-ai, a clock for its cool-down and a limiter. */
   ai?: { fetch?: typeof fetch; now?: () => number; limiter?: RateLimiter };
 }
@@ -311,6 +318,30 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     prefix: `${API_PREFIX}/alerts`,
     controller: createAlertsController(alertsService),
   });
+  // CPU work (report formatting, the benchmark) runs off the event loop, in worker threads.
+  const taskPool =
+    deps.taskPool ??
+    createLazyTaskPool({
+      size: env.WORKER_POOL_SIZE ?? 2,
+      taskTimeoutMs: env.WORKER_TASK_TIMEOUT_MS ?? 30_000,
+    });
+  app.addHook('onClose', async () => {
+    await taskPool.close();
+  });
+  const reportsService = createReportsService({
+    reports: repositories.reports,
+    products: repositories.products,
+    metrics: inventoryMetrics,
+    pool: taskPool,
+    audit: auditService,
+    clock,
+    timeZone: env.APP_TIMEZONE,
+  });
+  await app.register(reportsRoutes, {
+    prefix: `${API_PREFIX}/reports`,
+    controller: createReportsController(reportsService),
+  });
+
   const metricsService = createMetricsService({
     apiMetrics,
     webVitals: createWebVitalsStore(),

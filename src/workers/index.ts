@@ -1,4 +1,4 @@
-import { createWorkerPool, type PoolOptions, type WorkerPool } from './pool.js';
+import { createWorkerPool, DEFAULT_POOL_SIZE, type PoolOptions, type WorkerPool } from './pool.js';
 import type { TaskName, Tasks } from './tasks.js';
 import { resolveWorkerEntry } from './worker-entry.js';
 
@@ -19,6 +19,20 @@ export interface TaskPool {
   run<K extends TaskName>(task: K, payload: Tasks[K]['payload']): Promise<Tasks[K]['result']>;
   stats: WorkerPool['stats'];
   close: WorkerPool['close'];
+}
+
+/**
+ * Starts the pool on the first task, so an app that never builds a report or
+ * runs a benchmark (and every test app) never spawns threads.
+ */
+export function createLazyTaskPool(options: Omit<PoolOptions, 'entry'> = {}): TaskPool {
+  let pool: TaskPool | null = null;
+  const size = options.size ?? DEFAULT_POOL_SIZE;
+  return {
+    run: (task, payload) => (pool ??= createTaskPool(options)).run(task, payload),
+    stats: () => pool?.stats() ?? { size, ready: 0, busy: 0, queued: 0, restarts: 0 },
+    close: () => pool?.close() ?? Promise.resolve(),
+  };
 }
 
 /** The app's pool of task-worker threads (.ts with tsx in dev, .js in dist). */

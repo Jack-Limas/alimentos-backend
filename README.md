@@ -53,6 +53,86 @@ flowchart LR
 
 Capas del backend: `route → controller → service → repository (Prisma)`.
 
+## Módulos
+
+| Módulo (`src/modules/`) | Responsabilidad                                                                           |
+| ----------------------- | ----------------------------------------------------------------------------------------- |
+| `health`                | Liveness (`/health`, sin BD) y readiness (`SELECT 1`)                                     |
+| `auth`, `users`         | Login, refresh rotativo con detección de reutilización, logout, `/me`, límite de intentos |
+| `audit`                 | Registro de acciones sensibles y su consulta (ADMIN)                                      |
+| `products`, `inventory` | Catálogo, lotes, movimientos, métricas por producto (rotación, días de cobertura, riesgo) |
+| `customers`, `orders`   | Clientes y pedidos con máquina de estados                                                 |
+| `alerts`                | Alertas calculadas al vuelo (stock, vencimiento, riesgo de merma, pedidos por vencer)     |
+| `distribution`          | Motor de propuestas (puro, en `domain/`), snapshot para el Web Worker, confirmación FEFO  |
+| `ai`                    | Proxy hacia `alimentos-ai` con timeout, un reintento, caché y degradación                 |
+| `reports`, `benchmarks` | CSV/PDF y benchmark, formateados en el pool de `worker_threads`                           |
+| `metrics`, `public`     | Percentiles por ruta, Web Vitals y el agregado público de impacto                         |
+| `admin`                 | `GET /admin/network-info` para fijar `TRUST_PROXY`                                        |
+
+## Patrones
+
+| Patrón         | Dónde                                                                                                                                                                                                               | Por qué                                                                                                                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Repository** | Interfaz en `src/modules/*/*.repository.ts`, Prisma en `*.prisma-repository.ts`, en memoria en `tests/helpers/in-memory-*.ts`                                                                                       | Los servicios no conocen Prisma: las ~700 pruebas corren sin base de datos y las transacciones (salidas, confirmación) quedan encapsuladas en un solo lugar                       |
+| **Service**    | `src/modules/*/*.service.ts`, creados con `create*Service(deps)` en `src/app.ts`                                                                                                                                    | Reglas de negocio con dependencias inyectadas (repositorios, reloj, zona horaria, pool): se prueban con un reloj fijo y fakes                                                     |
+| **Strategy**   | `src/modules/distribution/domain/strategies.ts`: `PrioritizationStrategy` con `BalancedStrategy`, `UrgencyFirstStrategy`, `WasteFirstStrategy` y `AiAssistedStrategy`, elegidas por `createStrategy(name, weights)` | La priorización cambia sin tocar el motor (`build-proposal.ts`): cada estrategia es un puntaje ponderado; `AI_ASSISTED` usa los pesos de `BALANCED` y la IA solo reordena empates |
+| Controller     | `src/modules/*/*.controller.ts`                                                                                                                                                                                     | Valida con Zod (params, query y body) y traduce a HTTP; nada de lógica                                                                                                            |
+| Plugin         | `src/plugins/` (seguridad, auth, errores, Server-Timing, métricas)                                                                                                                                                  | Comportamiento transversal registrado una vez                                                                                                                                     |
+
+## Estructuras de datos
+
+| Estructura               | Dónde                                                                     | Uso y justificación                                                                                                                                                                                               |
+| ------------------------ | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Map`                    | `distribution.service.ts`, `alerts.service.ts`, `products` (métricas)     | Índices por id (pedido, producto, salida de 30 días) construidos una vez: búsquedas O(1) en lugar de recorrer listas dentro de bucles (evita O(n·m) y el N+1 de los listados)                                     |
+| **MinHeap**              | `src/modules/distribution/domain/min-heap.ts`                             | Cola de prioridad de pedidos en `build-proposal.ts`: sacar el más urgente es O(log n); al cambiar el stock se vuelve a puntuar de forma perezosa (solo el que sale) en vez de reordenar todo, O(n log n) en total |
+| **Lotes ordenados FEFO** | `src/modules/inventory/domain/fefo.ts`, `distribution/domain/lot-book.ts` | Lotes por producto ordenados por vencimiento (y recepción): se consume siempre desde el frente, O(1) por asignación; garantiza "primero en vencer, primero en salir" y deja fuera lo que vence hoy                |
+| **Buffer circular**      | `src/modules/metrics/domain/ring-buffer.ts`                               | Últimas 500 duraciones por ruta y 2.000 Web Vitals: inserción O(1) y memoria acotada aunque el servidor reciba millones de peticiones; los percentiles se calculan solo al consultar                              |
+| **Cola FIFO del pool**   | `src/workers/pool.ts`                                                     | Tareas pendientes de los `worker_threads`: una por worker libre, en orden de llegada, con timeout por tarea; la petición HTTP espera su promesa sin bloquear el event loop                                        |
+
+## Concurrencia y métricas
+
+- **Event loop libre**: el formateo de reportes y el benchmark corren en el pool de
+  `worker_threads` (§ Worker threads). El benchmark mide la diferencia: con 30.000 pedidos el hilo
+  principal bloquea ~1,2 s; con el pool, la sonda de 10 ms se retrasa ~15 ms.
+- **Sin carreras en el stock**: salidas y confirmaciones descuentan con
+  `updateMany({ where: { id, quantity: { gte } } })` dentro de una transacción (concurrencia
+  optimista); si otra petición ganó, 409 sin cambios parciales. `CHECK (quantity >= 0)` como
+  defensa extra.
+- **Propuestas obsoletas**: confirmar compara el snapshot guardado con el stock y los pedidos
+  actuales; si cambiaron, 409 `STALE_PROPOSAL`.
+- **Uno a la vez** donde importa: el benchmark (409 `BENCHMARK_RUNNING`), el refresh por familia de
+  tokens.
+- **Métricas**: `Server-Timing` en cada respuesta, p50/p95/p99 por patrón de ruta, lag del event
+  loop (`monitorEventLoopDelay`), memoria y Web Vitals del frontend (§ Métricas).
+
+## Seguridad
+
+- `bodyLimit` de 1 MiB (413 `PAYLOAD_TOO_LARGE`), validación Zod en todas las entradas, helmet
+  (HSTS, `nosniff`, `X-Frame-Options`, CORP `cross-origin` para el frontend aislado), CORS con
+  lista exacta de orígenes, cookie de refresh `HttpOnly; Secure; SameSite=None; Path=/api/v1/auth`,
+  logs con contraseñas, tokens, `Authorization` y cookies redactados, y errores 500 sin mensaje ni
+  stack en producción.
+- `TRUST_PROXY` (`true` o número de saltos) y `GET /api/v1/admin/network-info` para fijarlo (ver
+  [docs/deployment.md](docs/deployment.md#6-trust_proxy-en-render)).
+- **Matriz de roles**: [docs/role-matrix.md](docs/role-matrix.md), generada desde
+  `tests/role-matrix.cases.ts`. `tests/role-matrix.test.ts` envía las 43 rutas × {anónimo,
+  OPERATOR, ADMIN} y falla si una ruta nueva no está en la tabla.
+
+## Pruebas
+
+```bash
+npm test                                   # todas (Vitest, sin base de datos)
+npx vitest run tests/role-matrix.test.ts   # un archivo
+npx vitest --watch                         # modo watch
+npm run docs:role-matrix                   # regenera docs/role-matrix.md tras cambiar la tabla
+```
+
+Las pruebas construyen la app real (`buildApp`) con repositorios en memoria y la recorren con
+`app.inject`: rutas, roles, transacciones simuladas, motor de distribución con fixtures de paridad
+con el frontend, worker threads reales, reportes, seeds y el smoke de producción (que corre contra
+la app en memoria con un `fetch` sobre `inject`). CI ejecuta lint, formato, typecheck, pruebas y
+build en cada push.
+
 ## Endpoints disponibles
 
 | Método | Ruta                                         | Respuesta                                                                                                |
@@ -91,6 +171,16 @@ Capas del backend: `route → controller → service → repository (Prisma)`.
 | POST   | `/api/v1/ai/proposals/:id/explanation`       | Explicación de la IA guardada en `aiInsight`; si existe la devuelve (`cached`); `?refresh=true`          |
 | POST   | `/api/v1/ai/rescue-plan`                     | Solo `ADMIN`; acciones para productos con `wasteRisk = HIGH`                                             |
 | POST   | `/api/v1/ai/briefing`                        | Resumen del día; el `OPERATOR` recibe solo datos operativos                                              |
+| GET    | `/api/v1/reports/:kind`                      | Solo `ADMIN`; `inventory`, `orders`, `waste` en CSV o PDF                                                |
+| GET    | `/api/v1/benchmarks/limits`                  | Solo `ADMIN`; `{ data: { minSize, maxSize } }` (respeta `BENCHMARK_MAX_SIZE`)                            |
+| POST   | `/api/v1/benchmarks/worker-threads`          | Solo `ADMIN`; hilo principal vs pool                                                                     |
+| GET    | `/api/v1/metrics/api`                        | Solo `ADMIN`; percentiles por ruta, memoria, lag y uptime                                                |
+| POST   | `/api/v1/metrics/web-vitals`                 | `ADMIN` y `OPERATOR`; 204                                                                                |
+| GET    | `/api/v1/metrics/web-vitals`                 | Solo `ADMIN`; p75 por métrica y página                                                                   |
+| GET    | `/api/v1/public/impact`                      | Público; agregados de 30 días sin datos personales                                                       |
+| GET    | `/api/v1/admin/network-info`                 | Solo `ADMIN` (auditado); `ip`, `ips` y `X-Forwarded-For` para fijar `TRUST_PROXY`                        |
+
+Quién puede llamar qué: [docs/role-matrix.md](docs/role-matrix.md).
 
 Todas las respuestas incluyen `Server-Timing: app;dur=<ms>`. Los errores siguen el formato
 `{ "error": { "code", "message", "details" } }`.
@@ -135,6 +225,8 @@ Plantilla en [.env.example](.env.example). Nunca se commitean valores reales.
 | `AI_TIMEOUT_MS`          | No          | Timeout por intento de la IA (15000 por defecto)         |
 | `WORKER_POOL_SIZE`       | No          | Workers del pool de reportes y benchmark (2 por defecto) |
 | `WORKER_TASK_TIMEOUT_MS` | No          | Timeout por tarea del pool (30000 por defecto)           |
+| `TRUST_PROXY`            | No          | `true` (defecto) o número de saltos de proxy             |
+| `BENCHMARK_MAX_SIZE`     | No          | Máximo del benchmark (30000; **8000 en Render gratis**)  |
 | `CLOUDINARY_URL`         | [EXTRA]     | Fotos de productos                                       |
 | `SEED_ADMIN_EMAIL`       | Seed        | Email del admin demo (sin valor por defecto)             |
 | `SEED_ADMIN_PASSWORD`    | Seed        | 12+ caracteres con mayúscula, minúscula, número, símbolo |
@@ -142,21 +234,27 @@ Plantilla en [.env.example](.env.example). Nunca se commitean valores reales.
 | `SEED_OPERATOR_PASSWORD` | Seed        | Contraseña del operador demo (sin valor por defecto)     |
 
 Si falta una variable obligatoria el servidor no arranca e indica cuál falta (sin mostrar valores).
-Las `SEED_*` solo las valida el script de seed.
+Las `SEED_*` solo las valida el script de seed. `npm run smoke:prod` lee `SMOKE_BASE_URL`,
+`SMOKE_FRONTEND_ORIGIN`, `SMOKE_AI_URL` (`--warm`) y `SMOKE_ADMIN_*` / `SMOKE_OPERATOR_*` (o las
+`SEED_*`); ninguna va en Render.
 
 ## Scripts
 
-| Script                 | Descripción                          |
-| ---------------------- | ------------------------------------ |
-| `npm run dev`          | Servidor en modo watch (`tsx watch`) |
-| `npm run build`        | Compila TypeScript a `dist/`         |
-| `npm start`            | Ejecuta `dist/server.js`             |
-| `npm test`             | Pruebas con Vitest (no requieren BD) |
-| `npm run lint`         | ESLint con reglas type-aware         |
-| `npm run typecheck`    | `tsc --noEmit`                       |
-| `npm run format`       | Formatea con Prettier                |
-| `npm run format:check` | Verifica el formato (lo usa CI)      |
-| `npm run seed:bench`   | Seed grande para la rama `bench`     |
+| Script                                               | Descripción                             |
+| ---------------------------------------------------- | --------------------------------------- |
+| `npm run dev`                                        | Servidor en modo watch (`tsx watch`)    |
+| `npm run build`                                      | Compila TypeScript a `dist/`            |
+| `npm start`                                          | Ejecuta `dist/server.js`                |
+| `npm test`                                           | Pruebas con Vitest (no requieren BD)    |
+| `npm run lint`                                       | ESLint con reglas type-aware            |
+| `npm run typecheck`                                  | `tsc --noEmit`                          |
+| `npm run format`                                     | Formatea con Prettier                   |
+| `npm run format:check`                               | Verifica el formato (lo usa CI)         |
+| `npm run seed:bench`                                 | Seed grande para la rama `bench`        |
+| `npm run seed:history`                               | Historial de entregas para la demo      |
+| `npm run seed:refresh-demo -- --confirm-host=<host>` | Mueve las fechas de la demo a hoy       |
+| `npm run smoke:prod [-- --warm]`                     | Smoke de un despliegue (o lo despierta) |
+| `npm run docs:role-matrix`                           | Regenera `docs/role-matrix.md`          |
 
 ## Puertos
 
@@ -189,7 +287,9 @@ Render no ejecuta migraciones.
 | Health Check  | `/health`                                                      |
 | `PORT`        | No se define: Render lo inyecta                                |
 
-Las variables de entorno se configuran en el panel de Render.
+Las variables de entorno se configuran en el panel de Render. Guía completa (entornos, variables
+por servicio, orden de despliegue, migraciones, rollback, seeds, calentamiento y límites del plan
+gratis): [docs/deployment.md](docs/deployment.md).
 
 ## Autenticación
 
@@ -414,8 +514,10 @@ En local: `alimentos-ai` en el puerto 4100, `AI_SERVICE_URL=http://localhost:410
 - **Reportes** `GET /api/v1/reports/{inventory|orders|waste}?format=csv|pdf&locale=es|en`
   (solo ADMIN): CSV con BOM, `;` o `,` según el idioma, escapado RFC 4180 y protección contra CSV
   injection; PDF con pdfkit, encabezado repetido por página, totales y numeración.
-- **Benchmark** `POST /api/v1/benchmarks/worker-threads { size }` (solo ADMIN, 1.000–30.000): el
+- **Benchmark** `POST /api/v1/benchmarks/worker-threads { size }` (solo ADMIN, 1.000 a
+  `BENCHMARK_MAX_SIZE`, 30.000 por defecto y 8.000 recomendado en el plan gratis de Render): el
   modo hilo principal bloquea el servidor para todos, por eso el límite y uno a la vez (409).
+  `GET /api/v1/benchmarks/limits` expone el máximo para que el frontend lo respete.
 
 | Pedidos | Modo           | Duración | Lag máx. / p99 | Deriva de la sonda |
 | ------- | -------------- | -------- | -------------- | ------------------ |

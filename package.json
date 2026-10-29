@@ -20,6 +20,7 @@
     "seed:bench": "tsx prisma/seed-bench.ts",
     "seed:history": "tsx prisma/seed-history.ts",
     "seed:refresh-demo": "tsx prisma/refresh-demo.ts",
+    "smoke:prod": "tsx scripts/smoke-prod.ts",
     "docs:role-matrix": "tsx scripts/role-matrix.ts"
   },
   "dependencies": {

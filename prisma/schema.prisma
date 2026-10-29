@@ -367,3 +367,13 @@ model ProposalLine {
   @@index([proposalId, rank])
   @@map("proposal_lines")
 }
+
+// Key/value settings of the deployment, such as the anchor date of
+// `npm run seed:refresh-demo`. Never holds secrets.
+model AppMeta {
+  key       String   @id
+  value     String
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@map("app_meta")
+}

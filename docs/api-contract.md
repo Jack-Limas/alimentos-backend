@@ -132,6 +132,7 @@ stateDiagram-v2
 | 403 | `FORBIDDEN` |
 | 404 | `NOT_FOUND` |
 | 409 | `INVALID_STATUS_TRANSITION`, `INSUFFICIENT_STOCK`, `STALE_PROPOSAL`, `DUPLICATE`, `BENCHMARK_RUNNING` |
+| 413 | `PAYLOAD_TOO_LARGE` (cuerpo de más de 1 MiB) |
 | 429 | `TOO_MANY_REQUESTS` (incluye `Retry-After`) |
 | 503 | `AI_UNAVAILABLE` (con `details.category`) |
 | 500 | `INTERNAL_ERROR` (error inesperado; sin detalles internos en producción) |
@@ -375,6 +376,7 @@ El cliente solo envía IDs (en la ruta) y `{ locale?: "es" | "en" }` (por defect
 | GET | `/metrics/api` | A | [OBL] p50/p95/p99, conteo y 5xx por patrón de ruta + memoria, lag del event loop y uptime |
 | POST | `/metrics/web-vitals` | A, O | [OBL] `{ name, value, rating, page }` → 204 |
 | GET | `/metrics/web-vitals` | A | [OBL] p75 por métrica y por página |
+| GET | `/benchmarks/limits` | A | `{ data: { minSize, maxSize } }`: el máximo configurado (`BENCHMARK_MAX_SIZE`) |
 | POST | `/benchmarks/worker-threads` | A | [OBL] `{ size }` → hilo principal vs pool de workers |
 
 **Reportes** (los datos se leen en el hilo principal; el formateo CSV/PDF se hace en el pool de `worker_threads`):
@@ -385,7 +387,7 @@ El cliente solo envía IDs (en la ruta) y `{ locale?: "es" | "en" }` (por defect
 - Headers: `Content-Disposition: attachment; filename="alimentaiq-<reporte>-<fecha o rango>.<csv|pdf>"`, `X-Generation-Time-Ms` (lectura + formateo), `Server-Timing: db;dur=…, render;dur=…, app;dur=…` y `Cache-Control: no-store`. CORS expone `Content-Disposition` y `X-Generation-Time-Ms` (el frontend guarda el archivo con ese nombre y muestra el tiempo). Cada descarga deja `REPORT_EXPORTED` en la auditoría (tipo, formato, filas; nunca el contenido).
 - Es el único lugar donde el backend escribe texto traducido: un archivo lo lee una persona fuera de la app.
 
-**Benchmark** `POST /benchmarks/worker-threads` `{ size }` (entero de 1.000 a **30.000** pedidos sintéticos):
+**Benchmark** `POST /benchmarks/worker-threads` `{ size }` (entero de 1.000 a `BENCHMARK_MAX_SIZE` pedidos sintéticos: **30.000** por defecto, 8.000 recomendado en el plan gratis de Render; `GET /benchmarks/limits` lo expone para que el frontend no ofrezca tamaños que el servidor rechaza):
 
 - Ejecuta `heavyAnalysis` (métricas de producto + `buildProposal` sobre un snapshot sintético determinista) primero en el hilo principal y luego en el pool. En cada modo mide la duración, el lag del event loop (`monitorEventLoopDelay`: máx. y p99) y la deriva de una "sonda" `setInterval` de 10 ms (cuánto tarda el servidor en volver a atender).
 - El límite de 30.000 existe porque el modo hilo principal **bloquea el servidor para todos** mientras dura (≈1,1 s en un portátil, ≈2 s en una instancia pequeña).
@@ -412,6 +414,7 @@ El cliente solo envía IDs (en la ruta) y `{ locale?: "es" | "en" }` (por defect
 | Método | Ruta | Rol | Etiqueta |
 |---|---|---|---|
 | GET | `/audit-logs` | A | [OBL] |
+| GET | `/admin/network-info` | A | `{ data: { ip, ips, forwardedFor, remoteAddress, trustProxy } }` para fijar `TRUST_PROXY`; deja `NETWORK_INFO_VIEWED` en la auditoría |
 | GET/POST/PATCH | `/users` | A | [EXTRA] (las cuentas salen del seed) |
 
 ---

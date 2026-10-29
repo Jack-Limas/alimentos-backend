@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
 import {
+  degradedDetail,
   exitCodeOf,
   renderResults,
   runSmoke,
@@ -99,7 +100,13 @@ describe('smoke:prod', { timeout: 60_000 }, () => {
         init.body.includes('AI_ASSISTED')
           ? Promise.resolve(
               Response.json(
-                { data: { id: 'p-1', degraded: true, summary: { aiError: 'TIMEOUT' } } },
+                {
+                  data: {
+                    id: 'p-1',
+                    degraded: true,
+                    summary: { aiError: 'AUTH_REJECTED', aiErrorDetail: 'HTTP 401 UNAUTHORIZED' },
+                  },
+                },
                 { status: 201 },
               ),
             )
@@ -108,7 +115,11 @@ describe('smoke:prod', { timeout: 60_000 }, () => {
     await app.close();
 
     const ai = results.find((r) => r.name === 'POST /distribution/proposals (AI_ASSISTED)');
-    expect(ai).toMatchObject({ outcome: 'WARN', detail: 'degraded to BALANCED (TIMEOUT)' });
+    expect(ai).toMatchObject({
+      outcome: 'WARN',
+      detail:
+        'degraded to BALANCED: AUTH_REJECTED (HTTP 401 UNAUTHORIZED) → AI_INTERNAL_KEY differs between the backend and alimentos-ai',
+    });
   });
 
   it('fails (exit 1) when the database is down, and keeps going with the other checks', async () => {
@@ -181,5 +192,19 @@ describe('smoke:prod --warm', () => {
     ]);
     expect(results[0]?.detail).toBe('HTTP 200 after 3 attempts');
     expect(exitCodeOf(results)).toBe(1);
+  });
+});
+
+describe('smoke:prod AI detail', () => {
+  it('shows the category, what alimentos-ai answered and what to check', () => {
+    expect(
+      degradedDetail({ aiError: 'ENDPOINT_NOT_FOUND', aiErrorDetail: 'HTTP 404 NOT_FOUND' }),
+    ).toBe(
+      'degraded to BALANCED: ENDPOINT_NOT_FOUND (HTTP 404 NOT_FOUND) → AI_SERVICE_URL must be the AI origin, without /v1',
+    );
+    expect(degradedDetail({ aiError: 'TIMEOUT' })).toBe(
+      'degraded to BALANCED: TIMEOUT → the AI did not answer in time (cold start?)',
+    );
+    expect(degradedDetail(undefined)).toBe('degraded to BALANCED: AI unavailable');
   });
 });

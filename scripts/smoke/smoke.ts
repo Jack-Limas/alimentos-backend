@@ -30,6 +30,30 @@ export interface SmokeConfig {
   timeoutMs?: number;
 }
 
+/** What to look at for each AI failure category the backend reports. */
+export const AI_ERROR_HINTS: Readonly<Record<string, string>> = {
+  AUTH_REJECTED: 'AI_INTERNAL_KEY differs between the backend and alimentos-ai',
+  ENDPOINT_NOT_FOUND: 'AI_SERVICE_URL must be the AI origin, without /v1',
+  INVALID_REQUEST: 'alimentos-ai rejected the context: see its log',
+  RATE_LIMITED: 'alimentos-ai rate limit: wait a minute',
+  QUOTA_EXCEEDED: 'Gemini quota: wait, the backend cools down',
+  TIMEOUT: 'the AI did not answer in time (cold start?)',
+  INVALID_API_KEY: 'GEMINI_API_KEY on alimentos-ai',
+  MODEL_NOT_FOUND: 'GEMINI_MODEL on alimentos-ai',
+  NOT_CONFIGURED: 'AI_SERVICE_URL / AI_INTERNAL_KEY missing on the backend',
+  UPSTREAM_ERROR: 'Gemini answered nothing usable: see the alimentos-ai log',
+};
+
+/** "degraded to BALANCED: AUTH_REJECTED (HTTP 401 UNAUTHORIZED) → AI_INTERNAL_KEY differs…". */
+export function degradedDetail(
+  summary: { aiError?: string | null; aiErrorDetail?: string | null } | undefined,
+): string {
+  const category = summary?.aiError ?? 'AI unavailable';
+  const upstream = summary?.aiErrorDetail ? ` (${summary.aiErrorDetail})` : '';
+  const hint = AI_ERROR_HINTS[category];
+  return `degraded to BALANCED: ${category}${upstream}${hint ? ` → ${hint}` : ''}`;
+}
+
 /** A check failed in a way that should stop the dependent checks. */
 class CheckFailure extends Error {}
 
@@ -154,14 +178,14 @@ export async function runSmoke(config: SmokeConfig): Promise<CheckResult[]> {
         });
         expect(res, 201);
         const { data } = (await res.json()) as {
-          data: { id: string; degraded: boolean; summary?: { aiError?: string | null } };
+          data: {
+            id: string;
+            degraded: boolean;
+            summary?: { aiError?: string | null; aiErrorDetail?: string | null };
+          };
         };
         if (strategy === 'AI_ASSISTED' && data.degraded) {
-          return {
-            outcome: 'WARN',
-            detail: `degraded to BALANCED (${data.summary?.aiError ?? 'AI unavailable'})`,
-            value: data.id,
-          };
+          return { outcome: 'WARN', detail: degradedDetail(data.summary), value: data.id };
         }
         return { detail: 'DRAFT created', value: data.id };
       });

@@ -47,6 +47,11 @@ export async function measureWhile<T>(
   // also forgets its last timestamp and the next delay (the block) would be lost.
   histogram.enable();
   await sleep(3 * PROBE_INTERVAL_MS);
+  // On a busy machine the histogram's timer may not have fired yet: without that
+  // first sample (its baseline) a block right after would not be recorded.
+  for (let waited = 0; histogram.count < 1 && waited < 500; waited += PROBE_INTERVAL_MS) {
+    await sleep(PROBE_INTERVAL_MS);
+  }
   ticks = 0;
   maxDrift = 0;
   last = performance.now();

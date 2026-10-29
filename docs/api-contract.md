@@ -131,7 +131,7 @@ stateDiagram-v2
 | 401 | `UNAUTHENTICATED`, `INVALID_CREDENTIALS`, `TOKEN_EXPIRED` |
 | 403 | `FORBIDDEN` |
 | 404 | `NOT_FOUND` |
-| 409 | `INVALID_STATUS_TRANSITION`, `INSUFFICIENT_STOCK`, `STALE_PROPOSAL`, `DUPLICATE` |
+| 409 | `INVALID_STATUS_TRANSITION`, `INSUFFICIENT_STOCK`, `STALE_PROPOSAL`, `DUPLICATE`, `BENCHMARK_RUNNING` |
 | 429 | `TOO_MANY_REQUESTS` (incluye `Retry-After`) |
 | 503 | `AI_UNAVAILABLE` (con `details.category`) |
 | 500 | `INTERNAL_ERROR` (error inesperado; sin detalles internos en producción) |
@@ -369,18 +369,44 @@ El cliente solo envía IDs (en la ruta) y `{ locale?: "es" | "en" }` (por defect
 ### 4.10 Reportes y métricas
 | Método | Ruta | Rol | Etiqueta |
 |---|---|---|---|
-| GET | `/reports/inventory?format=csv\|pdf` | A | [OBL] header `X-Generation-Time-Ms` |
-| GET | `/reports/orders?from&to&format=csv\|pdf` | A | [OBL] |
-| GET | `/reports/waste?format=csv\|pdf` | A | [OBL] |
-| GET | `/metrics/api` | A | [OBL] p50/p95 por ruta (buffer circular en memoria) + `process.memoryUsage()` |
-| POST | `/metrics/web-vitals` | A, O | [OBL] INP, LCP, TTFB enviados desde el frontend |
-| POST | `/benchmarks/worker-threads` | A | [OBL] `{ size }` → `{ mainThreadMs, workerMs, eventLoopLagMain, eventLoopLagWorker }` |
+| GET | `/reports/inventory?format=csv\|pdf&locale=es\|en` | A | [OBL] productos activos con métricas |
+| GET | `/reports/orders?from&to&format&locale` | A | [OBL] pedidos creados en el rango |
+| GET | `/reports/waste?from&to&format&locale` | A | [OBL] `EXIT_WASTE` del rango + productos con `wasteRisk = HIGH` hoy |
+| GET | `/metrics/api` | A | [OBL] p50/p95/p99, conteo y 5xx por patrón de ruta + memoria, lag del event loop y uptime |
+| POST | `/metrics/web-vitals` | A, O | [OBL] `{ name, value, rating, page }` → 204 |
+| GET | `/metrics/web-vitals` | A | [OBL] p75 por métrica y por página |
+| POST | `/benchmarks/worker-threads` | A | [OBL] `{ size }` → hilo principal vs pool de workers |
+
+**Reportes** (los datos se leen en el hilo principal; el formateo CSV/PDF se hace en el pool de `worker_threads`):
+
+- `format` `csv` (por defecto) o `pdf`; `locale` `es` (por defecto) o `en`; `from`/`to` (`YYYY-MM-DD`, días de negocio en `APP_TIMEZONE`, ambos incluidos; por defecto los últimos 30 días; máximo 366). Cualquier otro parámetro → 400.
+- CSV: UTF-8 **con BOM** (Excel muestra las tildes), separador `;` y coma decimal con `locale=es`, `,` y punto decimal con `locale=en`, campos con separador/comillas/saltos entre comillas y comillas duplicadas, y **protección contra CSV injection**: las celdas de texto que empiezan por `= + - @`, tabulador o retorno de carro llevan un `'` delante. Los números nunca se modifican.
+- PDF (pdfkit): título, fecha de generación en hora de Bogotá, tabla paginada con el encabezado repetido, totales (por unidad, nunca sumando unidades distintas) y "Página X de Y".
+- Headers: `Content-Disposition: attachment; filename="alimentaiq-<reporte>-<fecha o rango>.<csv|pdf>"`, `X-Generation-Time-Ms` (lectura + formateo), `Server-Timing: db;dur=…, render;dur=…, app;dur=…` y `Cache-Control: no-store`. Cada descarga deja `REPORT_EXPORTED` en la auditoría (tipo, formato, filas; nunca el contenido).
+- Es el único lugar donde el backend escribe texto traducido: un archivo lo lee una persona fuera de la app.
+
+**Benchmark** `POST /benchmarks/worker-threads` `{ size }` (entero de 1.000 a **30.000** pedidos sintéticos):
+
+- Ejecuta `heavyAnalysis` (métricas de producto + `buildProposal` sobre un snapshot sintético determinista) primero en el hilo principal y luego en el pool. En cada modo mide la duración, el lag del event loop (`monitorEventLoopDelay`: máx. y p99) y la deriva de una "sonda" `setInterval` de 10 ms (cuánto tarda el servidor en volver a atender).
+- El límite de 30.000 existe porque el modo hilo principal **bloquea el servidor para todos** mientras dura (≈1,1 s en un portátil, ≈2 s en una instancia pequeña).
+- Uno a la vez: si hay otro corriendo → 409 `BENCHMARK_RUNNING`.
+- Respuesta: `{ size, mainThread, workerPool, sameResult, result, mainThreadMs, workerMs, eventLoopLagMain, eventLoopLagWorker }` (los cuatro últimos son el resumen original del contrato). Auditoría `BENCHMARK_RUN`.
+
+**Métricas**: un hook `onResponse` guarda por patrón de ruta (`GET /api/v1/orders/:id`, nunca la URL con IDs) las últimas 500 duraciones; `GET /metrics/api` da p50/p95/p99, el total y los 5xx de cada ruta, `process.memoryUsage()`, el lag del event loop (media, p99, máx.) y el uptime. Web vitals: `name` ∈ `INP, LCP, CLS, TTFB, FCP`, `value` 0–60.000, `rating` ∈ `good, needs-improvement, poor`, `page` = ruta sin query ni host (sin datos personales); se guardan las últimas 2.000 muestras. Todo en memoria y por proceso.
 
 ### 4.11 Público
 | Método | Ruta | Rol | Etiqueta |
 |---|---|---|---|
-| GET | `/public/impact` | P | [OBL] agregados sin datos personales (kg despachados, kg en riesgo rescatados, % entregas a tiempo); consumido por ISR |
+| GET | `/public/impact` | P | [OBL] agregados sin datos personales; consumido por ISR |
 | GET | `/public/dispatch-sheets/:id?token=` | P (token) | [EXTRA] consumido por SSR |
+
+`GET /public/impact` (sin autenticación) → `{ data: { windowDays: 30, from, to, dispatched, rescued, rescueDays: 7, deliveries: { total, onTime, onTimePct }, customersServed: { total, byType }, generatedAt } }`:
+
+- `dispatched`: cantidad de `EXIT_DISPATCH` de los últimos 30 días **por unidad** (`{ KG, L, UNIT, BOX }`).
+- `rescued`: de esa cantidad, la despachada de lotes que estaban a ≤ 7 días de vencer el día del despacho.
+- `deliveries`: pedidos que pasaron a `DELIVERED` en la ventana y cuántos llegaron hasta su `dueDate` (`onTimePct` con 1 decimal, `null` sin entregas).
+- `customersServed`: clientes distintos con entregas, contados por tipo. Nunca nombres, IDs, emails ni teléfonos.
+- `Cache-Control: public, max-age=300` + caché de 60 s en el servidor. Límite: 60 peticiones por minuto e IP → 429 con `Retry-After`.
 
 ### 4.12 Administración
 | Método | Ruta | Rol | Etiqueta |
@@ -427,7 +453,8 @@ El cliente solo envía IDs (en la ruta) y `{ locale?: "es" | "en" }` (por defect
 | backend | `SHEET_LINK_SECRET` | Enlaces firmados [EXTRA] |
 | backend | `CORS_ORIGINS` | Lista separada por comas |
 | backend | `AI_SERVICE_URL`, `AI_INTERNAL_KEY`, `AI_TIMEOUT_MS` | Llamadas a la IA (opcionales: sin URL o clave la IA queda "no configurada" y el sistema sigue; timeout 15000 ms por defecto) |
+| backend | `WORKER_POOL_SIZE`, `WORKER_TASK_TIMEOUT_MS` | Pool de `worker_threads` de reportes y benchmark (opcionales: 2 workers y 30.000 ms por defecto) |
 | backend | `CLOUDINARY_URL` | Fotos [EXTRA] |
-| backend | `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_OPERATOR_EMAIL`, `SEED_OPERATOR_PASSWORD`, `SEED_SIZE` | Seed (sin valores por defecto; solo las valida el script de seed; `SEED_SIZE=large` solo en local o rama `bench`) |
+| backend | `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_OPERATOR_EMAIL`, `SEED_OPERATOR_PASSWORD` | Seed (sin valores por defecto; solo las valida el script de seed). El seed grande es `npm run seed:bench -- --confirm-host=<host>` (solo rama `bench`) |
 | ai | `PORT`, `AI_INTERNAL_KEY`, `GEMINI_API_KEY`, `GEMINI_MODEL` | Solo este repo conoce la clave de Gemini |
 | frontend | `NEXT_PUBLIC_API_URL`, `API_URL_INTERNAL` | URL del backend (cliente / servidor Next) |

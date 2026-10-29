@@ -133,7 +133,9 @@ npm run smoke:prod
 dos roles, `/me`, productos, alertas, pedidos, snapshot, una propuesta `BALANCED` y una
 `AI_ASSISTED` (ambas se **descartan**: no se mueve stock), un reporte CSV, `/metrics/api`,
 `/public/impact`, negativos por rol, el preflight CORS desde el frontend y logout. Imprime una tabla
-PASS/WARN/FAIL con tiempos y sale con código ≠ 0 si algo falla. `AI_ASSISTED` degradado y
+PASS/WARN/FAIL con tiempos y sale con código ≠ 0 si algo falla. Si `AI_ASSISTED` sale degradado,
+el detalle dice la categoría, lo que respondió la IA y qué revisar (p. ej. `AUTH_REJECTED (HTTP 401
+UNAUTHORIZED) → AI_INTERNAL_KEY differs…`: la clave interna no coincide en Render). `AI_ASSISTED` degradado y
 `/impact` sin entregas son **WARN**, no FAIL.
 
 **Antes de presentar** (los servicios gratis duermen):

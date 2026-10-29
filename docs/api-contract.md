@@ -362,7 +362,7 @@ El cliente solo envía IDs (en la ruta) y `{ locale?: "es" | "en" }` (por defect
 | `/ai/briefing` | Conteos de alertas por `(type, severity, code)` (nunca las alertas con nombres), top 10 pedidos `PENDING` por score `BALANCED` y KPIs de `/inventory/summary` + `pendingOrders`. El OPERATOR recibe solo datos operativos: sin alertas `WASTE_RISK`, sin `customerType` y solo los KPIs `lowStock, outOfStock, expiringSoon, pendingOrders` |
 
 - Respuesta: `{ "data": {...}, "meta": { "model", "latencyMs", "cached" } }`.
-- Error: 503 `AI_UNAVAILABLE` con `details.category`: `NOT_CONFIGURED` (faltan `AI_SERVICE_URL` / `AI_INTERNAL_KEY`), `TIMEOUT`, `UPSTREAM_ERROR`, `QUOTA_EXCEEDED` (con `Retry-After` y `details.retryAfterSec`), `INVALID_API_KEY`, `MODEL_NOT_FOUND`. La UI muestra el resultado de reglas.
+- Error: 503 `AI_UNAVAILABLE` con `details.category`: `NOT_CONFIGURED` (faltan `AI_SERVICE_URL` / `AI_INTERNAL_KEY`), `TIMEOUT`, `UPSTREAM_ERROR`, `QUOTA_EXCEEDED` (con `Retry-After` y `details.retryAfterSec`), `INVALID_API_KEY`, `MODEL_NOT_FOUND`, y los rechazos del propio `alimentos-ai`: `AUTH_REJECTED` (401/403: `AI_INTERNAL_KEY` distinta en los dos servicios), `ENDPOINT_NOT_FOUND` (404: `AI_SERVICE_URL` con una ruta de más), `INVALID_REQUEST` (400/413/422: la IA rechazó el contexto) y `RATE_LIMITED` (429 del límite de la IA, con enfriamiento como la cuota). `details.upstream` dice lo que respondió la IA (p. ej. `HTTP 401 UNAUTHORIZED`), nunca la clave. En `AI_ASSISTED` degradado van en `summary.aiError` y `summary.aiErrorDetail`. La UI muestra el resultado de reglas.
 - Límite: 10 llamadas por minuto y usuario a `/ai/*` (en memoria, ventana deslizante) → 429 `TOO_MANY_REQUESTS` con `Retry-After`. Se cuenta después de `authorize`: un 403 no gasta cupo.
 - Auditoría `AI_REQUESTED` por cada llamada real: `{ endpoint, category: OK|<categoría>, latencyMs, model? }`, nunca el contenido.
 - Excepción a "el backend nunca envía texto traducido": el texto de la IA llega en el idioma pedido, en texto plano.
@@ -422,7 +422,7 @@ El cliente solo envía IDs (en la ruta) y `{ locale?: "es" | "en" }` (por defect
 ## 5. Contrato backend → `alimentos-ai`
 
 - Header `X-Internal-Key` (comparación timing-safe en `alimentos-ai`); el valor sale de `AI_INTERNAL_KEY` y nunca se registra.
-- Cliente del backend (`src/modules/ai/ai-client.ts`): timeout `AI_TIMEOUT_MS` (15 s por defecto) por intento con `AbortController`, **1 reintento** solo ante `TIMEOUT`, `UPSTREAM_ERROR` o error de red (también un 5xx desconocido). No reintenta `QUOTA_EXCEEDED`, `INVALID_API_KEY`, `MODEL_NOT_FOUND`, la clave interna rechazada (401) ni un 400.
+- Cliente del backend (`src/modules/ai/ai-client.ts`): timeout `AI_TIMEOUT_MS` (15 s por defecto) por intento con `AbortController`, **1 reintento** solo ante `TIMEOUT`, `UPSTREAM_ERROR` o error de red (también un 5xx desconocido). No reintenta `QUOTA_EXCEEDED`, `INVALID_API_KEY`, `MODEL_NOT_FOUND` ni los rechazos de la IA (`AUTH_REJECTED`, `ENDPOINT_NOT_FOUND`, `INVALID_REQUEST`, `RATE_LIMITED`): ninguno se arregla repitiendo, y antes se informaban todos como `UPSTREAM_ERROR`.
 - **Enfriamiento por cuota**: tras `QUOTA_EXCEEDED` el backend no vuelve a llamar hasta que pase `Retry-After` (o 60 s); mientras tanto responde `QUOTA_EXCEEDED` sin llamar. Estado en memoria.
 - El backend valida cada respuesta con Zod; si no cuadra → `UPSTREAM_ERROR`.
 - Modelo por variable `GEMINI_MODEL`. Salida JSON validada con Zod en ambos lados.

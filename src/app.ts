@@ -50,6 +50,11 @@ import {
   type DistributionRepository,
 } from './modules/distribution/index.js';
 import {
+  benchmarkRoutes,
+  createBenchmarkController,
+  createBenchmarkService,
+} from './modules/benchmarks/index.js';
+import {
   createApiMetrics,
   createMetricsController,
   createMetricsService,
@@ -340,6 +345,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(reportsRoutes, {
     prefix: `${API_PREFIX}/reports`,
     controller: createReportsController(reportsService),
+  });
+
+  await app.register(benchmarkRoutes, {
+    prefix: `${API_PREFIX}/benchmarks`,
+    controller: createBenchmarkController(
+      createBenchmarkService({ pool: taskPool, audit: auditService }),
+    ),
   });
 
   const metricsService = createMetricsService({

@@ -16,6 +16,7 @@ import {
   createInMemoryOrderRepository,
 } from './in-memory-orders.js';
 import { createInMemoryDistributionRepository } from './in-memory-distribution.js';
+import { createInMemoryReportsRepository } from './in-memory-reports.js';
 
 export const ALLOWED_ORIGIN = 'http://localhost:3000';
 export const TEST_JWT_SECRET = 'test-jwt-access-secret-0123456789abcdef0123';
@@ -39,7 +40,7 @@ export function createTestRepositories() {
     lots: inventory.lots,
     movements: inventory.movements,
   });
-  return {
+  const base = {
     users: createInMemoryUserRepository(),
     refreshTokens: createInMemoryRefreshTokenRepository(),
     loginAttempts: createInMemoryLoginAttemptRepository(),
@@ -56,7 +57,9 @@ export function createTestRepositories() {
       movements: inventory.movements,
       orders,
     }),
-  } satisfies AppRepositories;
+  };
+  // Reports read the same products, lots, movements, orders and customers.
+  return { ...base, reports: createInMemoryReportsRepository(base) } satisfies AppRepositories;
 }
 
 export type TestRepositories = ReturnType<typeof createTestRepositories>;

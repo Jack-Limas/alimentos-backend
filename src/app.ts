@@ -85,6 +85,10 @@ import {
   productRoutes,
   type ProductRepository,
 } from './modules/products/index.js';
+import {
+  createPrismaReportsRepository,
+  type ReportsRepository,
+} from './modules/reports/reports.repository.js';
 import { createPrismaUserRepository, type UserRepository } from './modules/users/index.js';
 import apiMetricsPlugin from './plugins/api-metrics.js';
 import auth from './plugins/auth.js';
@@ -105,6 +109,7 @@ export interface AppRepositories {
   customers: CustomerRepository;
   orders: OrderRepository;
   distribution: DistributionRepository;
+  reports: ReportsRepository;
 }
 
 export interface AppDeps {
@@ -161,6 +166,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       customers: createPrismaCustomerRepository(prisma),
       orders: createPrismaOrderRepository(prisma),
       distribution: createPrismaDistributionRepository(prisma),
+      reports: createPrismaReportsRepository(prisma),
     };
     app.addHook('onClose', async () => {
       await prisma.$disconnect();

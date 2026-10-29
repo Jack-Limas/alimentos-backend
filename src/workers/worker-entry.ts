@@ -2,19 +2,25 @@
 export interface WorkerEntry {
   url: URL;
   execArgv: string[];
+  workerData?: { entry: string };
 }
+
+const BOOTSTRAP = new URL('./tsx-bootstrap.ts', import.meta.url);
 
 /**
  * Resolves a worker script next to `fromUrl` (pass `import.meta.url`).
  * - Development and tests run the TypeScript sources (tsx, vitest): the
- *   caller is a `.ts` file, so the worker is `<name>.ts` and the thread is
- *   started with `--import tsx` to understand TypeScript.
- * - Production runs the compiled `dist/**.js`: the worker is `<name>.js` and
- *   plain Node runs it.
+ *   caller is a `.ts` file, so the thread starts tsx-bootstrap.ts (built-in
+ *   type stripping), which registers tsx and imports `<name>.ts`.
+ * - Production runs the compiled `dist/**.js`: plain Node runs `<name>.js`.
  */
 export function resolveWorkerEntry(fromUrl: string, name: string): WorkerEntry {
   const fromTypeScript = new URL(fromUrl).pathname.endsWith('.ts');
   return fromTypeScript
-    ? { url: new URL(`./${name}.ts`, fromUrl), execArgv: ['--import', 'tsx'] }
+    ? {
+        url: BOOTSTRAP,
+        execArgv: ['--experimental-strip-types', '--disable-warning=ExperimentalWarning'],
+        workerData: { entry: new URL(`./${name}.ts`, fromUrl).href },
+      }
     : { url: new URL(`./${name}.js`, fromUrl), execArgv: [] };
 }

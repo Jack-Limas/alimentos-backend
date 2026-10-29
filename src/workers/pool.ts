@@ -60,6 +60,8 @@ export interface PoolOptions {
 
 export interface PoolStats {
   size: number;
+  /** Workers loaded and able to take a task. */
+  ready: number;
   busy: number;
   queued: number;
   /** Workers replaced after a crash or a timeout since the pool started. */
@@ -107,7 +109,11 @@ export function createWorkerPool({
   let closed = false;
 
   function spawn(slot: Slot): Worker {
-    const worker = new Worker(entry.url, { execArgv: entry.execArgv, name });
+    const worker = new Worker(entry.url, {
+      execArgv: entry.execArgv,
+      name,
+      ...(entry.workerData ? { workerData: entry.workerData } : {}),
+    });
     worker.on('message', (message: TaskResponse | typeof READY_MESSAGE) => {
       if (slot.worker !== worker) return;
       if ('ready' in message) {
@@ -199,6 +205,7 @@ export function createWorkerPool({
 
     stats: () => ({
       size: slots.length,
+      ready: slots.filter((slot) => slot.ready).length,
       busy: slots.filter((slot) => slot.job).length,
       queued: queue.length,
       restarts,

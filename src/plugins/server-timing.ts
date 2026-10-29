@@ -3,11 +3,14 @@ import fp from 'fastify-plugin';
 
 /**
  * Adds `Server-Timing: app;dur=<ms>` to every response (contract, section 3),
- * including error and 404 responses.
+ * including error and 404 responses. A handler may set its own metrics first
+ * (e.g. `db;dur=…, render;dur=…` on reports): app;dur is appended to them.
  */
 const serverTimingPlugin: FastifyPluginCallback = (app, _options, done) => {
   app.addHook('onSend', async (_request, reply, payload) => {
-    reply.header('Server-Timing', `app;dur=${reply.elapsedTime.toFixed(1)}`);
+    const own = reply.getHeader('Server-Timing');
+    const app = `app;dur=${reply.elapsedTime.toFixed(1)}`;
+    reply.header('Server-Timing', typeof own === 'string' && own ? `${own}, ${app}` : app);
     return payload;
   });
 

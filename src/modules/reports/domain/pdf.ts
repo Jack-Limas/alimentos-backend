@@ -99,24 +99,32 @@ export function toPdf(document: ReportDocument): Promise<Uint8Array> {
       pdf.moveDown(0.4);
     }
 
+    // Long labels ("Riesgo de merma") wrap: the header grows to the tallest one.
+    pdf.font('Helvetica-Bold').fontSize(FONT_SIZE);
+    const headerHeight = Math.max(
+      HEADER_HEIGHT,
+      ...table.columns.map(
+        (column, index) =>
+          pdf.heightOfString(column.label, { width: (widths[index] ?? 0) - 8 }) + 12,
+      ),
+    );
+
     const header = () => {
       const y = pdf.y;
-      pdf.rect(left, y, width, HEADER_HEIGHT).fill(COLORS.header);
+      pdf.rect(left, y, width, headerHeight).fill(COLORS.header);
       let x = left;
       table.columns.forEach((column, index) => {
         pdf
           .font('Helvetica-Bold')
           .fontSize(FONT_SIZE)
           .fillColor(COLORS.headerText)
-          .text(column.label, x + 4, y + 7, {
+          .text(column.label, x + 4, y + 6, {
             width: (widths[index] ?? 0) - 8,
             align: column.kind === 'number' ? 'right' : 'left',
-            lineBreak: false,
-            ellipsis: true,
           });
         x += widths[index] ?? 0;
       });
-      pdf.y = y + HEADER_HEIGHT;
+      pdf.y = y + headerHeight;
     };
 
     if (table.rows.length === 0) {

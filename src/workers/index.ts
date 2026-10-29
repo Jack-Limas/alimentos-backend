@@ -19,6 +19,8 @@ export interface TaskPool {
   run<K extends TaskName>(task: K, payload: Tasks[K]['payload']): Promise<Tasks[K]['result']>;
   stats: WorkerPool['stats'];
   close: WorkerPool['close'];
+  /** Starts the workers now, so the first task does not pay their start-up. */
+  warm(): void;
 }
 
 /**
@@ -32,6 +34,9 @@ export function createLazyTaskPool(options: Omit<PoolOptions, 'entry'> = {}): Ta
     run: (task, payload) => (pool ??= createTaskPool(options)).run(task, payload),
     stats: () => pool?.stats() ?? { size, ready: 0, busy: 0, queued: 0, restarts: 0 },
     close: () => pool?.close() ?? Promise.resolve(),
+    warm: () => {
+      pool ??= createTaskPool(options);
+    },
   };
 }
 
@@ -46,5 +51,6 @@ export function createTaskPool(options: Omit<PoolOptions, 'entry'> = {}): TaskPo
     run: (task, payload) => pool.run(task, payload),
     stats: () => pool.stats(),
     close: () => pool.close(),
+    warm: () => undefined,
   };
 }

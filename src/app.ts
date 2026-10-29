@@ -149,6 +149,8 @@ export interface AppDeps {
   logger?: NonNullable<FastifyServerOptions['logger']>;
   /** Worker threads for reports and the benchmark (lazy by default). */
   taskPool?: TaskPool;
+  /** Start the worker threads at once (the server does; tests keep them lazy). */
+  warmWorkers?: boolean;
   /** Rate limit of GET /public/impact per IP (tests inject one with a fake clock). */
   publicLimiter?: RateLimiter;
   /** Tests inject a fake fetch for alimentos-ai, a clock for its cool-down and a limiter. */
@@ -334,6 +336,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       size: env.WORKER_POOL_SIZE ?? 2,
       taskTimeoutMs: env.WORKER_TASK_TIMEOUT_MS ?? 30_000,
     });
+  if (deps.warmWorkers) taskPool.warm();
   app.addHook('onClose', async () => {
     await taskPool.close();
   });

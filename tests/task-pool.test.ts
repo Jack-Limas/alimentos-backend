@@ -4,7 +4,12 @@ import {
   runHeavyAnalysis,
 } from '../src/modules/benchmarks/domain/heavy-analysis.js';
 import type { ReportDocument } from '../src/modules/reports/domain/report-document.js';
-import { createTaskPool, TaskFailedError, type TaskPool } from '../src/workers/index.js';
+import {
+  createLazyTaskPool,
+  createTaskPool,
+  TaskFailedError,
+  type TaskPool,
+} from '../src/workers/index.js';
 
 // The real task-worker.ts, started like in development (--import tsx).
 let pool: TaskPool;
@@ -69,4 +74,17 @@ describe('task pool (real task-worker)', { timeout: 30_000 }, () => {
     ).rejects.toBeInstanceOf(TaskFailedError);
     expect(pool.stats().restarts).toBe(0);
   });
+});
+
+describe('createLazyTaskPool', () => {
+  it('starts no thread until the first task or warm()', async () => {
+    const lazy = createLazyTaskPool({ size: 1 });
+    expect(lazy.stats()).toEqual({ size: 1, ready: 0, busy: 0, queued: 0, restarts: 0 });
+    lazy.warm();
+    const until = Date.now() + 20_000;
+    while (lazy.stats().ready < 1 && Date.now() < until)
+      await new Promise((r) => setTimeout(r, 20));
+    expect(lazy.stats().ready).toBe(1);
+    await lazy.close();
+  }, 30_000);
 });

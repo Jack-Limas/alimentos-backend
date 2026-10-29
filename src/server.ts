@@ -5,7 +5,8 @@ const SHUTDOWN_SIGNALS = ['SIGTERM', 'SIGINT'] as const;
 
 async function main(): Promise<void> {
   const env = loadEnv();
-  const app = await buildApp({ env });
+  // Worker threads start with the server, so the first report does not wait for them.
+  const app = await buildApp({ env, warmWorkers: true });
 
   let shuttingDown = false;
   for (const signal of SHUTDOWN_SIGNALS) {

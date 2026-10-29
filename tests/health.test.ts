@@ -93,6 +93,10 @@ describe('CORS', () => {
 
     expect(res.headers['access-control-allow-origin']).toBe(ALLOWED_ORIGIN);
     expect(res.headers['access-control-allow-credentials']).toBe('true');
+    // The frontend reads these from cross-origin responses (reports, rate limits, timings).
+    expect(String(res.headers['access-control-expose-headers']).split(/,\s*/)).toEqual(
+      expect.arrayContaining(['Content-Disposition', 'X-Generation-Time-Ms', 'Retry-After']),
+    );
     await app.close();
   });
 

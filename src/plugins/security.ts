@@ -16,7 +16,8 @@ const securityPlugin: FastifyPluginAsync<SecurityOptions> = async (app, options)
     origin: options.corsOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    exposedHeaders: ['Server-Timing', 'Retry-After', 'X-Generation-Time-Ms'],
+    // Content-Disposition carries the report file name the frontend saves the download with.
+    exposedHeaders: ['Server-Timing', 'Retry-After', 'X-Generation-Time-Ms', 'Content-Disposition'],
   });
 
   // The frontend enables cross-origin isolation (COOP + COEP: require-corp) to

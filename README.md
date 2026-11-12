@@ -9,6 +9,52 @@ métricas, y actúa como proxy hacia el servicio de IA (`alimentos-ai`).
 - Contrato completo: [docs/api-contract.md](docs/api-contract.md). No hay código compartido con
   `alimentos-frontend` ni con `alimentos-ai`.
 
+## Cómo evaluar este proyecto
+
+**No hay registro público, por diseño.** AlimentaIQ es el sistema interno de un centro de
+distribución: las cuentas las crea la organización (aquí, el seed), igual que en un ERP o un WMS.
+Un formulario de registro abierto dejaría que cualquiera viera inventario, clientes y pedidos, y
+el modelo de roles no tendría sentido.
+
+Para evaluarlo en producción hay **dos cuentas demo** cuyas credenciales se entregan al evaluador
+(sus contraseñas son públicas a propósito; las cuentas reales son otras y no se comparten):
+
+| Cuenta        | Rol        | Puede                                                                                                                                       | No puede                                                                                   |
+| ------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| DEMO ADMIN    | `ADMIN`    | Todo: productos, entradas y salidas, clientes, crear pedidos, propuestas de distribución (con IA), reportes, métricas, benchmark, auditoría | —                                                                                          |
+| DEMO OPERATOR | `OPERATOR` | Misiones del día, mover pedidos por la máquina de estados, propuestas de distribución, alertas, briefing de la IA                           | Crear productos o pedidos, movimientos, clientes, reportes, métricas (la API responde 403) |
+
+La matriz completa, verificada por pruebas: [docs/role-matrix.md](docs/role-matrix.md).
+
+**Los datos se rejuvenecen solos cada día.** Con `DEMO_DAILY_REFRESH=true`, el primer login (o la
+primera visita a la página pública de impacto) de cada día de negocio en Bogotá desplaza las fechas
+de la demo los días transcurridos: vencimientos de lotes, fechas límite y creación de pedidos,
+historial y movimientos. Así siempre hay lotes por vencer, pedidos urgentes y un impacto de los
+últimos 30 días, sin importar cuándo se evalúe. Corre después de responder (el login no espera ni
+falla por él), como mucho una vez al día y bajo un candado de PostgreSQL
+(`pg_advisory_xact_lock`), así dos logins simultáneos no desplazan dos veces. Queda en la auditoría
+como `DEMO_REFRESHED`.
+
+**Nada se borra.** El rejuvenecimiento solo mueve fechas; lo que el evaluador cree (pedidos,
+movimientos, propuestas) se queda y se mueve con el resto.
+
+## Servidores dormidos en Render
+
+El plan gratis de Render **duerme cada servicio tras ~15 minutos sin tráfico**; la primera petición
+lo despierta en hasta ~1 minuto. Al abrir la app después de un rato:
+
+- la primera carga puede tardar; si el login parece colgado, espera y reintenta;
+- `/es/impact` siempre carga (es estática, ISR), aunque el backend duerma;
+- la IA tiene su propio servicio: si estaba dormida, la primera propuesta `AI_ASSISTED` puede salir
+  **degradada** (resultado de reglas, avisado en la pantalla); la siguiente ya usa la IA.
+
+**Mantenerlo despierto solo**: `.github/workflows/keep-awake.yml` (opcional) hace ping a `/health`
+cada 14 minutos **de 6:00 a 22:00 en Bogotá**. Se activa definiendo la variable del repositorio
+`KEEP_AWAKE_URL` con el origen del backend. No se hace 24/7 a propósito: el plan gratis da **750
+horas de instancia al mes compartidas** entre los servicios gratis de la cuenta; el backend despierto
+todo el día usa ~720 h y dejaría sin horas a la IA (Render suspende los servicios hasta el mes
+siguiente). Con el horario diurno son ~480 h. Los pings a `/health` no rejuvenecen datos.
+
 ## Arquitectura
 
 ```mermaid
@@ -206,32 +252,35 @@ curl -i http://localhost:4000/health
 
 Plantilla en [.env.example](.env.example). Nunca se commitean valores reales.
 
-| Variable                 | Obligatoria | Uso                                                      |
-| ------------------------ | ----------- | -------------------------------------------------------- |
-| `NODE_ENV`               | Sí          | `development` · `test` · `production`                    |
-| `PORT`                   | No          | Render lo inyecta; en local 4000 por defecto             |
-| `DATABASE_URL`           | Sí          | Conexión pooled de Neon (la usa la app)                  |
-| `DIRECT_URL`             | Sí          | Conexión directa de Neon (la usan las migraciones)       |
-| `CORS_ORIGINS`           | Sí          | Orígenes permitidos separados por comas                  |
-| `JWT_ACCESS_SECRET`      | Sí          | Firma del access token (mínimo 32 caracteres)            |
-| `ACCESS_TOKEN_TTL`       | No          | Duración del access token (`15m` por defecto)            |
-| `REFRESH_TOKEN_TTL_DAYS` | No          | Días de vida del refresh token (7 por defecto)           |
-| `LOGIN_MAX_ATTEMPTS`     | No          | Intentos fallidos por email + IP (5 por defecto)         |
-| `LOGIN_WINDOW_MINUTES`   | No          | Ventana del límite de intentos (15 por defecto)          |
-| `APP_TIMEZONE`           | No          | Zona del calendario de negocio (`America/Bogota`)        |
-| `SHEET_LINK_SECRET`      | [EXTRA]     | Enlaces firmados de hoja de despacho                     |
-| `AI_SERVICE_URL`         | No          | URL de `alimentos-ai`; sin ella la IA queda desactivada  |
-| `AI_INTERNAL_KEY`        | No          | Clave enviada en `X-Internal-Key` (igual en ambos repos) |
-| `AI_TIMEOUT_MS`          | No          | Timeout por intento de la IA (15000 por defecto)         |
-| `WORKER_POOL_SIZE`       | No          | Workers del pool de reportes y benchmark (2 por defecto) |
-| `WORKER_TASK_TIMEOUT_MS` | No          | Timeout por tarea del pool (30000 por defecto)           |
-| `TRUST_PROXY`            | No          | `true` (defecto) o número de saltos de proxy             |
-| `BENCHMARK_MAX_SIZE`     | No          | Máximo del benchmark (30000; **8000 en Render gratis**)  |
-| `CLOUDINARY_URL`         | [EXTRA]     | Fotos de productos                                       |
-| `SEED_ADMIN_EMAIL`       | Seed        | Email del admin demo (sin valor por defecto)             |
-| `SEED_ADMIN_PASSWORD`    | Seed        | 12+ caracteres con mayúscula, minúscula, número, símbolo |
-| `SEED_OPERATOR_EMAIL`    | Seed        | Email del operador demo (sin valor por defecto)          |
-| `SEED_OPERATOR_PASSWORD` | Seed        | Contraseña del operador demo (sin valor por defecto)     |
+| Variable                                 | Obligatoria     | Uso                                                             |
+| ---------------------------------------- | --------------- | --------------------------------------------------------------- |
+| `NODE_ENV`                               | Sí              | `development` · `test` · `production`                           |
+| `PORT`                                   | No              | Render lo inyecta; en local 4000 por defecto                    |
+| `DATABASE_URL`                           | Sí              | Conexión pooled de Neon (la usa la app)                         |
+| `DIRECT_URL`                             | Sí              | Conexión directa de Neon (la usan las migraciones)              |
+| `CORS_ORIGINS`                           | Sí              | Orígenes permitidos separados por comas                         |
+| `JWT_ACCESS_SECRET`                      | Sí              | Firma del access token (mínimo 32 caracteres)                   |
+| `ACCESS_TOKEN_TTL`                       | No              | Duración del access token (`15m` por defecto)                   |
+| `REFRESH_TOKEN_TTL_DAYS`                 | No              | Días de vida del refresh token (7 por defecto)                  |
+| `LOGIN_MAX_ATTEMPTS`                     | No              | Intentos fallidos por email + IP (5 por defecto)                |
+| `LOGIN_WINDOW_MINUTES`                   | No              | Ventana del límite de intentos (15 por defecto)                 |
+| `APP_TIMEZONE`                           | No              | Zona del calendario de negocio (`America/Bogota`)               |
+| `SHEET_LINK_SECRET`                      | [EXTRA]         | Enlaces firmados de hoja de despacho                            |
+| `AI_SERVICE_URL`                         | No              | URL de `alimentos-ai`; sin ella la IA queda desactivada         |
+| `AI_INTERNAL_KEY`                        | No              | Clave enviada en `X-Internal-Key` (igual en ambos repos)        |
+| `AI_TIMEOUT_MS`                          | No              | Timeout por intento de la IA (15000 por defecto)                |
+| `WORKER_POOL_SIZE`                       | No              | Workers del pool de reportes y benchmark (2 por defecto)        |
+| `WORKER_TASK_TIMEOUT_MS`                 | No              | Timeout por tarea del pool (30000 por defecto)                  |
+| `TRUST_PROXY`                            | No              | `true` (defecto) o número de saltos de proxy                    |
+| `BENCHMARK_MAX_SIZE`                     | No              | Máximo del benchmark (30000; **8000 en Render gratis**)         |
+| `DEMO_DAILY_REFRESH`                     | No              | `true`: rejuvenece la demo una vez al día (`false` por defecto) |
+| `CLOUDINARY_URL`                         | [EXTRA]         | Fotos de productos                                              |
+| `SEED_ADMIN_EMAIL`                       | Seed            | Email del admin demo (sin valor por defecto)                    |
+| `SEED_ADMIN_PASSWORD`                    | Seed            | 12+ caracteres con mayúscula, minúscula, número, símbolo        |
+| `SEED_OPERATOR_EMAIL`                    | Seed            | Email del operador demo (sin valor por defecto)                 |
+| `SEED_OPERATOR_PASSWORD`                 | Seed            | Contraseña del operador demo (sin valor por defecto)            |
+| `SEED_DEMO_ADMIN_EMAIL` / `_PASSWORD`    | Seed (opcional) | Cuenta DEMO ADMIN; contraseña pública, mínimo 10 caracteres     |
+| `SEED_DEMO_OPERATOR_EMAIL` / `_PASSWORD` | Seed (opcional) | Cuenta DEMO OPERATOR; ídem                                      |
 
 Si falta una variable obligatoria el servidor no arranca e indica cuál falta (sin mostrar valores).
 Las `SEED_*` solo las valida el script de seed. `npm run smoke:prod` lee `SMOKE_BASE_URL`,
@@ -240,21 +289,23 @@ Las `SEED_*` solo las valida el script de seed. `npm run smoke:prod` lee `SMOKE_
 
 ## Scripts
 
-| Script                                               | Descripción                             |
-| ---------------------------------------------------- | --------------------------------------- |
-| `npm run dev`                                        | Servidor en modo watch (`tsx watch`)    |
-| `npm run build`                                      | Compila TypeScript a `dist/`            |
-| `npm start`                                          | Ejecuta `dist/server.js`                |
-| `npm test`                                           | Pruebas con Vitest (no requieren BD)    |
-| `npm run lint`                                       | ESLint con reglas type-aware            |
-| `npm run typecheck`                                  | `tsc --noEmit`                          |
-| `npm run format`                                     | Formatea con Prettier                   |
-| `npm run format:check`                               | Verifica el formato (lo usa CI)         |
-| `npm run seed:bench`                                 | Seed grande para la rama `bench`        |
-| `npm run seed:history`                               | Historial de entregas para la demo      |
-| `npm run seed:refresh-demo -- --confirm-host=<host>` | Mueve las fechas de la demo a hoy       |
-| `npm run smoke:prod [-- --warm]`                     | Smoke de un despliegue (o lo despierta) |
-| `npm run docs:role-matrix`                           | Regenera `docs/role-matrix.md`          |
+| Script                                                | Descripción                                  |
+| ----------------------------------------------------- | -------------------------------------------- |
+| `npm run dev`                                         | Servidor en modo watch (`tsx watch`)         |
+| `npm run build`                                       | Compila TypeScript a `dist/`                 |
+| `npm start`                                           | Ejecuta `dist/server.js`                     |
+| `npm test`                                            | Pruebas con Vitest (no requieren BD)         |
+| `npm run lint`                                        | ESLint con reglas type-aware                 |
+| `npm run typecheck`                                   | `tsc --noEmit`                               |
+| `npm run format`                                      | Formatea con Prettier                        |
+| `npm run format:check`                                | Verifica el formato (lo usa CI)              |
+| `npm run seed:bench`                                  | Seed grande para la rama `bench`             |
+| `npm run seed:history`                                | Historial de entregas para la demo           |
+| `npm run seed:refresh-demo -- --confirm-host=<host>`  | Mueve las fechas de la demo a hoy            |
+| `npm run seed:demo-users`                             | Solo crea/actualiza las 2 cuentas demo       |
+| `npm run demo:anchor-report -- --confirm-host=<host>` | Propone el `--anchor` inicial (solo lectura) |
+| `npm run smoke:prod [-- --warm]`                      | Smoke de un despliegue (o lo despierta)      |
+| `npm run docs:role-matrix`                            | Regenera `docs/role-matrix.md`               |
 
 ## Puertos
 
@@ -349,6 +400,13 @@ sequenceDiagram
 `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_OPERATOR_EMAIL` y `SEED_OPERATOR_PASSWORD`. No hay
 valores por defecto: si falta alguna variable o la contraseña del admin es débil, falla con un
 mensaje que nombra la variable sin mostrar su valor. Es idempotente y nunca imprime contraseñas.
+
+Además crea (también con upsert) las cuentas **DEMO ADMIN** y **DEMO OPERATOR** desde
+`SEED_DEMO_ADMIN_EMAIL`, `SEED_DEMO_ADMIN_PASSWORD`, `SEED_DEMO_OPERATOR_EMAIL` y
+`SEED_DEMO_OPERATOR_PASSWORD`. Si faltan, las omite con un aviso (no falla). Su contraseña es
+pública: solo se exige un mínimo de 10 caracteres. Nunca usan el email de una cuenta real ni
+modifican un usuario que no sea demo. `npm run seed:demo-users` crea solo estas dos, sin tocar
+el catálogo.
 
 ### Catálogo e inventario demo (seed)
 

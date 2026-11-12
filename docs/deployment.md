@@ -25,24 +25,25 @@ flowchart LR
 
 ### alimentos-backend (Render)
 
-| Variable                                     | Obligatoria | Uso                                                                                                       |
-| -------------------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------- |
-| `NODE_ENV`                                   | Sí          | `production`: errores 500 sin mensaje ni stack                                                            |
-| `DATABASE_URL`                               | Sí          | Cadena **pooled** de la rama `main` de Neon                                                               |
-| `DIRECT_URL`                                 | Sí          | Cadena **directa** de `main` (solo la usa `prisma migrate`)                                               |
-| `CORS_ORIGINS`                               | Sí          | Orígenes exactos del frontend, separados por coma (`https://<app>.vercel.app`)                            |
-| `JWT_ACCESS_SECRET`                          | Sí          | ≥ 32 caracteres aleatorios                                                                                |
-| `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL_DAYS` | No          | 15m y 7 días por defecto                                                                                  |
-| `LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_MINUTES` | No          | 5 intentos en 15 minutos por defecto                                                                      |
-| `APP_TIMEZONE`                               | No          | `America/Bogota` por defecto                                                                              |
-| `TRUST_PROXY`                                | No          | `true` (defecto) o el número de saltos de proxy; ver §6                                                   |
-| `BENCHMARK_MAX_SIZE`                         | No          | 30000 por defecto; **8000 en el plan gratis** (el modo hilo principal bloquea el servidor mientras corre) |
-| `WORKER_POOL_SIZE`, `WORKER_TASK_TIMEOUT_MS` | No          | 2 workers y 30 s por defecto                                                                              |
-| `AI_SERVICE_URL`, `AI_INTERNAL_KEY`          | No          | Sin ellas la IA queda "no configurada" y `AI_ASSISTED` se degrada a `BALANCED`                            |
-| `AI_TIMEOUT_MS`                              | No          | 15 s por intento por defecto                                                                              |
-| `PORT`                                       | —           | No se define: Render la inyecta                                                                           |
+| Variable                                     | Obligatoria | Uso                                                                                                                               |
+| -------------------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`                                   | Sí          | `production`: errores 500 sin mensaje ni stack                                                                                    |
+| `DATABASE_URL`                               | Sí          | Cadena **pooled** de la rama `main` de Neon                                                                                       |
+| `DIRECT_URL`                                 | Sí          | Cadena **directa** de `main` (solo la usa `prisma migrate`)                                                                       |
+| `CORS_ORIGINS`                               | Sí          | Orígenes exactos del frontend, separados por coma (`https://<app>.vercel.app`)                                                    |
+| `JWT_ACCESS_SECRET`                          | Sí          | ≥ 32 caracteres aleatorios                                                                                                        |
+| `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL_DAYS` | No          | 15m y 7 días por defecto                                                                                                          |
+| `LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_MINUTES` | No          | 5 intentos en 15 minutos por defecto                                                                                              |
+| `APP_TIMEZONE`                               | No          | `America/Bogota` por defecto                                                                                                      |
+| `TRUST_PROXY`                                | No          | `true` (defecto) o el número de saltos de proxy; ver §6                                                                           |
+| `BENCHMARK_MAX_SIZE`                         | No          | 30000 por defecto; **8000 en el plan gratis** (el modo hilo principal bloquea el servidor mientras corre)                         |
+| `DEMO_DAILY_REFRESH`                         | No          | `true` en producción para la evaluación: rejuvenece la demo una vez al día tras un login o `/public/impact` (`false` por defecto) |
+| `WORKER_POOL_SIZE`, `WORKER_TASK_TIMEOUT_MS` | No          | 2 workers y 30 s por defecto                                                                                                      |
+| `AI_SERVICE_URL`, `AI_INTERNAL_KEY`          | No          | Sin ellas la IA queda "no configurada" y `AI_ASSISTED` se degrada a `BALANCED`                                                    |
+| `AI_TIMEOUT_MS`                              | No          | 15 s por intento por defecto                                                                                                      |
+| `PORT`                                       | —           | No se define: Render la inyecta                                                                                                   |
 
-`SEED_*` y `SMOKE_*` **no** van en Render: solo se usan desde tu máquina (§5 y §7).
+`SEED_*` (incluidas `SEED_DEMO_*`) y `SMOKE_*` **no** van en Render: solo se usan desde tu máquina (§5 y §7).
 
 ### alimentos-ai (Render)
 
@@ -190,3 +191,30 @@ Después de cualquier rollback: `npm run smoke:prod`.
   hora y por idioma.
 - Las métricas (`/metrics/*`) viven en memoria: se reinician con cada deploy o cuando Render duerme
   el servicio.
+
+## 11. Evaluación en producción (fase 7): cuentas demo y rejuvenecimiento diario
+
+Variables nuevas (sin valores): en Render `DEMO_DAILY_REFRESH=true`; en tu `.env` local, solo para
+el seed, `SEED_DEMO_ADMIN_EMAIL`, `SEED_DEMO_ADMIN_PASSWORD`, `SEED_DEMO_OPERATOR_EMAIL` y
+`SEED_DEMO_OPERATOR_PASSWORD` (contraseñas públicas de 10+ caracteres, distintas de las reales).
+
+Orden (desde tu máquina, con las cadenas de `main` solo en la línea de comandos):
+
+1. Desplegar el backend con esta versión **sin** `DEMO_DAILY_REFRESH` todavía (queda apagado).
+2. Cuentas demo: `DATABASE_URL=<main> DIRECT_URL=<main> npm run seed:demo-users`.
+3. Diagnóstico de la ancla (solo lectura):
+   `DATABASE_URL=<main> DIRECT_URL=<main> npm run demo:anchor-report -- --confirm-host=<host de main>`.
+4. Primera corrida manual con la fecha propuesta (solo si no hay ancla guardada):
+   `DATABASE_URL=<main> DIRECT_URL=<main> npm run seed:refresh-demo -- --confirm-host=<host de main> --anchor=<fecha>`.
+   Desplaza los días desde la siembra y guarda hoy como ancla.
+5. En Render: `DEMO_DAILY_REFRESH=true` (reinicia el servicio). Desde ahí se rejuvenece solo, una vez
+   por día de negocio, con el primer login o la primera visita a `/impact`.
+6. Opcional: variable del repositorio `KEEP_AWAKE_URL` = origen del backend para
+   `.github/workflows/keep-awake.yml` (ping diurno; ver README "Servidores dormidos en Render").
+7. `npm run smoke:prod` y un login con cada cuenta demo; en la auditoría aparece `DEMO_REFRESHED`
+   el día siguiente.
+
+Si se activara `DEMO_DAILY_REFRESH` antes del paso 4, el primer login guardaría hoy como ancla
+**sin desplazar** (seguro por defecto) y la demo quedaría con la edad de la siembra; en ese caso
+`seed:refresh-demo` ya no acepta `--anchor` (hay ancla): se corrige borrando a mano la fila
+`demo_anchor_date` de `app_meta` y repitiendo el paso 4.

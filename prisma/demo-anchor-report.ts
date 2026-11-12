@@ -44,11 +44,17 @@ async function main(): Promise<number> {
       movements: movements._min.createdAt,
       anchor: anchor?.value ?? null,
     };
-    out(`  earliest products.createdAt:            ${iso(facts.products)}`);
-    out(`  earliest inventory_lots.createdAt:      ${iso(facts.lots)}`);
-    out(`  earliest orders.createdAt:              ${iso(facts.orders)} (backdated by the seed)`);
     out(
-      `  earliest inventory_movements.createdAt: ${iso(facts.movements)} (backdated by the seed)`,
+      `  earliest products.createdAt:            ${iso(facts.products)} (the seed day: source of the proposal)`,
+    );
+    out(
+      `  earliest inventory_lots.createdAt:      ${iso(facts.lots)} (backdated by the seed: reference only)`,
+    );
+    out(
+      `  earliest orders.createdAt:              ${iso(facts.orders)} (backdated by the seed: reference only)`,
+    );
+    out(
+      `  earliest inventory_movements.createdAt: ${iso(facts.movements)} (backdated by the seed: reference only)`,
     );
     out(`  app_meta.${DEMO_ANCHOR_KEY}:            ${facts.anchor ?? '— (none)'}`);
 

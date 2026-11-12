@@ -17,9 +17,10 @@ export type AnchorAdvice =
 
 /**
  * Which --anchor to pass to the FIRST manual `seed:refresh-demo`: the business
- * day the demo was seeded. Products and lots are inserted by the seed with the
- * real time, so the earliest of them is the seed day. Orders and movements are
- * not used: the seed dates them in the past on purpose (history, due dates).
+ * day (APP_TIMEZONE) of the earliest products.createdAt, which is the day the
+ * seed ran. ONLY products: the seed dates lots (receivedAt/createdAt), orders
+ * and movements in the past on purpose (history, expiry), so their earliest
+ * dates are weeks or months before the seed and are shown for reference only.
  * With an anchor already stored there is nothing to propose (--anchor would be
  * ignored); the report says how many days behind the data is.
  */
@@ -32,9 +33,7 @@ export function adviseAnchor(facts: AnchorFacts, timeZone: string, now: Date): A
       behindDays: daysBetween(facts.anchor, today),
     };
   }
-  const seeded = [facts.products, facts.lots].filter((date): date is Date => date !== null);
-  if (seeded.length === 0) return { kind: 'EMPTY' };
-  const earliest = new Date(Math.min(...seeded.map((date) => date.getTime())));
-  const anchor = todayIn(timeZone, earliest);
+  if (facts.products === null) return { kind: 'EMPTY' };
+  const anchor = todayIn(timeZone, facts.products);
   return { kind: 'PROPOSE', anchor, daysToShift: Math.max(0, daysBetween(anchor, today)) };
 }

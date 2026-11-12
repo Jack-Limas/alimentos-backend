@@ -7,7 +7,7 @@ const ZONE = 'America/Bogota';
 const NOW = new Date('2026-11-12T17:00:00Z');
 
 describe('demo:anchor-report', () => {
-  it('proposes the business day the demo was seeded (earliest product or lot)', () => {
+  it('proposes the business day the demo was seeded (earliest product)', () => {
     const advice = adviseAnchor(
       {
         // 20:30 in Bogota on 2026-10-28 = 01:30 UTC on 2026-10-29: the business day is the 28th.
@@ -23,6 +23,34 @@ describe('demo:anchor-report', () => {
     );
 
     expect(advice).toEqual({ kind: 'PROPOSE', anchor: '2026-10-28', daysToShift: 15 });
+  });
+
+  it('reproduces the main incident: backdated lots never move the anchor (2026-10-26, not 2026-08-26)', () => {
+    const advice = adviseAnchor(
+      {
+        // The real seed of main: 23:23 in Bogota on 2026-10-26.
+        products: new Date('2026-10-27T04:23:00Z'),
+        // Lots are backdated by the seed (received weeks or months before).
+        lots: new Date('2026-08-26T12:00:00Z'),
+        orders: new Date('2026-09-25T12:00:00Z'),
+        movements: new Date('2026-08-26T12:00:00Z'),
+        anchor: null,
+      },
+      ZONE,
+      new Date('2026-11-12T17:00:00Z'),
+    );
+
+    expect(advice).toEqual({ kind: 'PROPOSE', anchor: '2026-10-26', daysToShift: 17 });
+  });
+
+  it('needs products to propose anything: lots alone are not the seed day', () => {
+    expect(
+      adviseAnchor(
+        { products: null, lots: NOW, orders: NOW, movements: NOW, anchor: null },
+        ZONE,
+        NOW,
+      ),
+    ).toEqual({ kind: 'EMPTY' });
   });
 
   it('proposes nothing when an anchor is already stored, and says how far behind it is', () => {

@@ -219,3 +219,22 @@ Si se activara `DEMO_DAILY_REFRESH` antes del paso 4, el primer login guardaría
 **sin desplazar** (seguro por defecto) y la demo quedaría con la edad de la siembra; en ese caso
 `seed:refresh-demo` ya no acepta `--anchor` (hay ancla): se corrige borrando a mano la fila
 `demo_anchor_date` de `app_meta` y repitiendo el paso 4.
+
+### Corregir un desplazamiento equivocado (`--shift-days`)
+
+Si la demo se desplazó de más o de menos (por ejemplo, con un `--anchor` mal elegido), se corrige
+moviendo **exactamente** el mismo conjunto (lotes, pedidos, historial de estados, movimientos) N días,
+en una transacción con el mismo `pg_advisory_xact_lock`; deja hoy como ancla, así el refresco
+diario sigue normal desde mañana. `N` es entero, distinto de 0 y |N| <= 120; negativo mueve hacia
+atrás. Primero siempre en modo de prueba (no escribe nada; muestra los conteos y las fechas
+ANTES/DESPUÉS: vencimientos de lotes con stock, entregas de pedidos activos y el último movimiento
+comparado con ahora):
+
+```bash
+DATABASE_URL=<main> DIRECT_URL=<main> npm run seed:refresh-demo -- --confirm-host=<host de main> --shift-days=-61 --dry-run
+DATABASE_URL=<main> DIRECT_URL=<main> npm run seed:refresh-demo -- --confirm-host=<host de main> --shift-days=-61
+```
+
+`demo:anchor-report` propone el ancla solo desde el `createdAt` más antiguo de `products` (el día
+de la siembra); lotes, pedidos y movimientos los fecha el seed hacia atrás y se muestran solo como
+referencia.

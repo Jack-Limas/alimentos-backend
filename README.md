@@ -291,23 +291,24 @@ Las `SEED_*` solo las valida el script de seed. `npm run smoke:prod` lee `SMOKE_
 
 ## Scripts
 
-| Script                                                | Descripción                                  |
-| ----------------------------------------------------- | -------------------------------------------- |
-| `npm run dev`                                         | Servidor en modo watch (`tsx watch`)         |
-| `npm run build`                                       | Compila TypeScript a `dist/`                 |
-| `npm start`                                           | Ejecuta `dist/server.js`                     |
-| `npm test`                                            | Pruebas con Vitest (no requieren BD)         |
-| `npm run lint`                                        | ESLint con reglas type-aware                 |
-| `npm run typecheck`                                   | `tsc --noEmit`                               |
-| `npm run format`                                      | Formatea con Prettier                        |
-| `npm run format:check`                                | Verifica el formato (lo usa CI)              |
-| `npm run seed:bench`                                  | Seed grande para la rama `bench`             |
-| `npm run seed:history`                                | Historial de entregas para la demo           |
-| `npm run seed:refresh-demo -- --confirm-host=<host>`  | Mueve las fechas de la demo a hoy            |
-| `npm run seed:demo-users`                             | Solo crea/actualiza las 2 cuentas demo       |
-| `npm run demo:anchor-report -- --confirm-host=<host>` | Propone el `--anchor` inicial (solo lectura) |
-| `npm run smoke:prod [-- --warm]`                      | Smoke de un despliegue (o lo despierta)      |
-| `npm run docs:role-matrix`                            | Regenera `docs/role-matrix.md`               |
+| Script                                                                            | Descripción                                  |
+| --------------------------------------------------------------------------------- | -------------------------------------------- |
+| `npm run dev`                                                                     | Servidor en modo watch (`tsx watch`)         |
+| `npm run build`                                                                   | Compila TypeScript a `dist/`                 |
+| `npm start`                                                                       | Ejecuta `dist/server.js`                     |
+| `npm test`                                                                        | Pruebas con Vitest (no requieren BD)         |
+| `npm run lint`                                                                    | ESLint con reglas type-aware                 |
+| `npm run typecheck`                                                               | `tsc --noEmit`                               |
+| `npm run format`                                                                  | Formatea con Prettier                        |
+| `npm run format:check`                                                            | Verifica el formato (lo usa CI)              |
+| `npm run seed:bench`                                                              | Seed grande para la rama `bench`             |
+| `npm run seed:history`                                                            | Historial de entregas para la demo           |
+| `npm run seed:refresh-demo -- --confirm-host=<host>`                              | Mueve las fechas de la demo a hoy            |
+| `npm run seed:demo-users`                                                         | Solo crea/actualiza las 2 cuentas demo       |
+| `npm run demo:anchor-report -- --confirm-host=<host>`                             | Propone el `--anchor` inicial (solo lectura) |
+| `npm run seed:refresh-demo -- --confirm-host=<host> --shift-days=<N> [--dry-run]` | Corrige un desplazamiento de N días          |
+| `npm run smoke:prod [-- --warm]`                                                  | Smoke de un despliegue (o lo despierta)      |
+| `npm run docs:role-matrix`                                                        | Regenera `docs/role-matrix.md`               |
 
 ## Puertos
 

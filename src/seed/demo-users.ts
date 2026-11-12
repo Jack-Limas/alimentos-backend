@@ -19,11 +19,27 @@ export const DEMO_SEED_VARIABLES = [
 
 export const DEMO_PASSWORD_MIN_LENGTH = 10;
 
-/** Display names that mark an account as a demo one (and the only ones this seed may update). */
+/** Display names of the demo accounts ("Operador Demo" → avatar "OD"). */
 export const DEMO_NAMES: Readonly<Record<Role, string>> = {
-  ADMIN: 'Demo · Administrador',
-  OPERATOR: 'Demo · Operador',
+  ADMIN: 'Administrador Demo',
+  OPERATOR: 'Operador Demo',
 };
+
+/** Names the demo accounts had before (renamed on the next seed run). */
+const LEGACY_DEMO_NAMES: readonly string[] = ['Demo · Administrador', 'Demo · Operador'];
+
+/**
+ * Whether an existing user can be managed as the demo account of `role`.
+ * Demo accounts are identified by their email (SEED_DEMO_*_EMAIL: the only
+ * users this seed ever looks up). The protection stays: a user that already
+ * has that email is only updated when it was created as a demo account (a
+ * demo name, current or legacy) and keeps its role. Anyone else's account is
+ * never turned into a demo one or given a public password.
+ */
+export function canManageAsDemo(existing: { name: string; role: Role }, role: Role): boolean {
+  const demoName = existing.name === DEMO_NAMES[role] || LEGACY_DEMO_NAMES.includes(existing.name);
+  return demoName && existing.role === role;
+}
 
 export interface DemoUsersConfig {
   admin: SeedAccount;
@@ -84,9 +100,9 @@ export function parseDemoUsersConfig(source: NodeJS.ProcessEnv): DemoUsersParse 
 }
 
 /**
- * Idempotent: upserts the two demo accounts by email. Refuses to update an
- * existing user that is not a demo one (another person's account with that
- * email is never turned into a demo account or given a public password).
+ * Idempotent: upserts the two demo accounts by email (SEED_DEMO_*_EMAIL).
+ * Refuses to update an existing user with that email that is not a demo
+ * account (see canManageAsDemo), before touching anything.
  */
 export async function seedDemoUsers(
   users: UserRepository,
@@ -97,9 +113,9 @@ export async function seedDemoUsers(
     { account: config.admin, role: 'ADMIN' as const },
     { account: config.operator, role: 'OPERATOR' as const },
   ];
-  for (const { account } of accounts) {
+  for (const { account, role } of accounts) {
     const existing = await users.findByEmail(normalizeEmail(account.email));
-    if (existing && !Object.values(DEMO_NAMES).includes(existing.name)) {
+    if (existing && !canManageAsDemo(existing, role)) {
       throw new SeedConfigError([
         'SEED_DEMO_*_EMAIL: belongs to an existing account that is not a demo account',
       ]);

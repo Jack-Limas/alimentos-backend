@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canManageAsDemo,
   DEMO_NAMES,
   parseDemoUsersConfig,
   seedDemoUsers,
@@ -79,6 +80,35 @@ describe('demo accounts: seed', () => {
     expect(await testHasher.compare('Strong-Admin-Pass-1', realAdmin?.passwordHash ?? '')).toBe(
       true,
     );
+  });
+
+  it('names them "Administrador Demo" and "Operador Demo" (avatar initials AD and OD)', () => {
+    expect(DEMO_NAMES).toEqual({ ADMIN: 'Administrador Demo', OPERATOR: 'Operador Demo' });
+  });
+
+  it('finds the demo accounts by email and renames the ones created with the old names', async () => {
+    const users = createInMemoryUserRepository();
+    await users.upsertByEmail({
+      email: 'demo.operador@alimentaiq.test',
+      name: 'Demo · Operador',
+      passwordHash: 'old',
+      role: 'OPERATOR',
+    });
+
+    await seedDemoUsers(users, testHasher, configOf(demoEnv));
+
+    const operator = [...users.users.values()].find(
+      (u) => u.email === 'demo.operador@alimentaiq.test',
+    );
+    expect(operator).toMatchObject({ name: 'Operador Demo', role: 'OPERATOR' });
+    expect(users.users.size).toBe(2);
+  });
+
+  it('never manages a non-demo account or changes an account role', () => {
+    expect(canManageAsDemo({ name: 'Operador Demo', role: 'OPERATOR' }, 'OPERATOR')).toBe(true);
+    expect(canManageAsDemo({ name: 'Demo · Administrador', role: 'ADMIN' }, 'ADMIN')).toBe(true);
+    expect(canManageAsDemo({ name: 'María Pérez', role: 'ADMIN' }, 'ADMIN')).toBe(false);
+    expect(canManageAsDemo({ name: 'Operador Demo', role: 'OPERATOR' }, 'ADMIN')).toBe(false);
   });
 
   it('refuses to turn an existing non-demo account into a demo one', async () => {

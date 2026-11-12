@@ -4,10 +4,14 @@
 // --anchor is only for the first run: the business day the demo was seeded.
 // Prints the host and counts only, never the URL, user or password.
 import dotenv from 'dotenv';
+import { createAuditService, createPrismaAuditLogRepository } from '../src/modules/audit/index.js';
+import {
+  createDemoRefreshService,
+  createPrismaDemoRefreshStore,
+  parseAnchorArg,
+} from '../src/modules/demo/index.js';
 import { todayIn } from '../src/modules/inventory/domain/index.js';
 import { hostOf, parseConfirmHost } from '../src/seed/bench-guard.js';
-import { parseAnchorArg, refreshDemo } from '../src/seed/refresh-demo.js';
-import { createPrismaRefreshDemoStore } from '../src/seed/refresh-demo.prisma-store.js';
 
 const out = (line: string) => process.stdout.write(`${line}\n`);
 
@@ -28,13 +32,19 @@ async function main(): Promise<number> {
   out(`seed:refresh-demo target host: ${host}`);
 
   const zone = process.env.APP_TIMEZONE?.trim() ?? '';
-  const today = todayIn(zone === '' ? 'America/Bogota' : zone, new Date());
+  const timeZone = zone === '' ? 'America/Bogota' : zone;
+  const today = todayIn(timeZone, new Date());
   const { prisma } = await import('../src/lib/prisma.js');
   try {
-    const result = await refreshDemo(createPrismaRefreshDemoStore(prisma), {
-      today,
-      fromArg: parseAnchorArg(argv),
+    // The same service the API uses for the lazy daily refresh (same lock, same audit row).
+    const service = createDemoRefreshService({
+      store: createPrismaDemoRefreshStore(prisma),
+      audit: createAuditService(createPrismaAuditLogRepository(prisma)),
+      clock: () => new Date(),
+      timeZone,
+      log: { info: () => undefined, error: () => undefined },
     });
+    const result = await service.run({ fromArg: parseAnchorArg(argv) });
     switch (result.action) {
       case 'refuse':
         out(

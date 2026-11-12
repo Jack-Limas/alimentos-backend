@@ -1,12 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-  parseAnchorArg,
-  planRefresh,
-  refreshDemo,
-  type RefreshDemoStore,
-} from '../src/seed/refresh-demo.js';
+import { parseAnchorArg, planRefresh } from '../src/modules/demo/index.js';
+import { createDemoRefreshService } from '../src/modules/demo/index.js';
+import { createInMemoryAuditLogRepository } from './helpers/in-memory-repositories.js';
+import { createInMemoryDemoRefreshStore } from './helpers/in-memory-demo-refresh.js';
+import { createAuditService } from '../src/modules/audit/index.js';
 
 describe('seed:refresh-demo plan', () => {
   it('moves the demo by the days since the stored anchor', () => {
@@ -52,54 +51,43 @@ describe('seed:refresh-demo plan', () => {
   });
 });
 
-describe('refreshDemo (idempotent for a day)', () => {
-  function memoryStore(anchor: string | null) {
-    const shifts: number[] = [];
-    const store: RefreshDemoStore & { anchor: string | null; shifts: number[] } = {
-      anchor,
-      shifts,
-      readAnchor: () => Promise.resolve(store.anchor),
-      writeAnchor: (today) => {
-        store.anchor = today;
-        return Promise.resolve();
-      },
-      shiftAndAnchor: (days, today) => {
-        shifts.push(days);
-        store.anchor = today;
-        return Promise.resolve({ lots: 10, orders: 5, history: 20, movements: 40 });
-      },
+describe('seed:refresh-demo through the DemoRefreshService (idempotent for a day)', () => {
+  function service(anchor: string | null, today: string) {
+    const store = createInMemoryDemoRefreshStore();
+    store.anchor = anchor;
+    const auditLogs = createInMemoryAuditLogRepository();
+    return {
+      store,
+      auditLogs,
+      demo: createDemoRefreshService({
+        store,
+        audit: createAuditService(auditLogs),
+        clock: () => new Date(`${today}T17:00:00Z`),
+        timeZone: 'America/Bogota',
+        log: { info: () => undefined, error: () => undefined },
+      }),
     };
-    return store;
   }
 
   it('the first run without --anchor only stores today', async () => {
-    const store = memoryStore(null);
-    expect(await refreshDemo(store, { today: '2026-10-29' })).toEqual({
-      action: 'anchored',
-      today: '2026-10-29',
-    });
+    const { demo, store } = service(null, '2026-10-29');
+    expect(await demo.run()).toEqual({ action: 'anchored', today: '2026-10-29' });
     expect(store.anchor).toBe('2026-10-29');
     expect(store.shifts).toEqual([]);
   });
 
-  it('shifts once and then does nothing until the next day', async () => {
-    const store = memoryStore('2026-10-26');
-    expect(await refreshDemo(store, { today: '2026-10-29' })).toMatchObject({
-      action: 'shift',
-      days: 3,
-      counts: { lots: 10 },
-    });
-    expect(await refreshDemo(store, { today: '2026-10-29' })).toEqual({
-      action: 'none',
-      today: '2026-10-29',
-    });
-    expect(await refreshDemo(store, { today: '2026-10-30' })).toMatchObject({ days: 1 });
-    expect(store.shifts).toEqual([3, 1]);
+  it('shifts once and then does nothing until the next day, auditing DEMO_REFRESHED', async () => {
+    const { demo, store, auditLogs } = service('2026-10-26', '2026-10-29');
+    expect(await demo.run()).toMatchObject({ action: 'shift', days: 3, counts: { lots: 3 } });
+    expect(await demo.run()).toEqual({ action: 'none', today: '2026-10-29' });
+    expect(store.shifts).toEqual([3]);
+    expect(auditLogs.entries.filter((e) => e.action === 'DEMO_REFRESHED')).toHaveLength(1);
+    expect(auditLogs.entries[0]?.metadata).toMatchObject({ trigger: 'script', days: 3 });
   });
 
   it('the SQL moves lots, orders, history and movements in one transaction', () => {
     const source = readFileSync(
-      join(process.cwd(), 'src/seed/refresh-demo.prisma-store.ts'),
+      join(process.cwd(), 'src/modules/demo/demo-refresh.prisma-store.ts'),
       'utf8',
     );
     for (const table of [
@@ -111,6 +99,11 @@ describe('refreshDemo (idempotent for a day)', () => {
       expect(source).toContain(`UPDATE "${table}"`);
     }
     expect(source).toContain('$transaction');
+    // The lock comes first, inside the same transaction as the anchor read and the shift.
+    const lock = source.indexOf('SELECT pg_advisory_xact_lock');
+    expect(lock).toBeGreaterThan(source.indexOf('prisma.$transaction('));
+    expect(lock).toBeLessThan(source.indexOf('tx.appMeta.findUnique'));
+    expect(lock).toBeLessThan(source.indexOf('UPDATE "inventory_lots"'));
     // Parameters, never string concatenation.
     expect(source).not.toMatch(/\$executeRawUnsafe/);
   });

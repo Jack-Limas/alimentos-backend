@@ -1,8 +1,4 @@
-import {
-  daysBetween,
-  isCalendarDate,
-  type CalendarDate,
-} from '../modules/inventory/domain/index.js';
+import { daysBetween, isCalendarDate, type CalendarDate } from '../inventory/domain/index.js';
 
 /** app_meta key of the business day the demo data is "fresh" for. */
 export const DEMO_ANCHOR_KEY = 'demo_anchor_date';
@@ -56,36 +52,7 @@ export interface RefreshCounts {
   movements: number;
 }
 
-export interface RefreshDemoStore {
-  readAnchor(): Promise<string | null>;
-  /** In one transaction: moves every date `days` forward and stores `today` as the anchor. */
-  shiftAndAnchor(days: number, today: CalendarDate): Promise<RefreshCounts>;
-  writeAnchor(today: CalendarDate): Promise<void>;
-}
-
 export type RefreshResult =
   | { action: 'shift'; days: number; from: CalendarDate; counts: RefreshCounts }
   | { action: 'anchored' | 'none'; today: CalendarDate }
   | { action: 'refuse'; reason: 'ANCHOR_IN_FUTURE' | 'INVALID_ANCHOR' };
-
-/**
- * Moves the demo to today. The first run without --anchor only stores today
- * as the anchor, so the next runs have a base to count from.
- */
-export async function refreshDemo(
-  store: RefreshDemoStore,
-  { today, fromArg }: { today: CalendarDate; fromArg?: string | undefined },
-): Promise<RefreshResult> {
-  const stored = await store.readAnchor();
-  const plan = planRefresh({ stored, fromArg, today });
-  if (plan.action === 'refuse') return plan;
-  if (plan.action === 'none') {
-    if (stored === null) {
-      await store.writeAnchor(today);
-      return { action: 'anchored', today };
-    }
-    return { action: 'none', today };
-  }
-  const counts = await store.shiftAndAnchor(plan.days, today);
-  return { action: 'shift', days: plan.days, from: plan.from, counts };
-}

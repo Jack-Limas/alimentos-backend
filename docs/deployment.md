@@ -209,8 +209,9 @@ Orden (desde tu máquina, con las cadenas de `main` solo en la línea de comando
    Desplaza los días desde la siembra y guarda hoy como ancla.
 5. En Render: `DEMO_DAILY_REFRESH=true` (reinicia el servicio). Desde ahí se rejuvenece solo, una vez
    por día de negocio, con el primer login o la primera visita a `/impact`.
-6. Opcional: variable del repositorio `KEEP_AWAKE_URL` = origen del backend para
-   `.github/workflows/keep-awake.yml` (ping diurno; ver README "Servidores dormidos en Render").
+6. `.github/workflows/keep-awake.yml` queda **desactivado**: no activarlo si hay otros servicios en
+   la misma cuenta de Render (750 h gratis compartidas). El frontend despierta los servicios al
+   visitar la app (`/api/wake`).
 7. `npm run smoke:prod` y un login con cada cuenta demo; en la auditoría aparece `DEMO_REFRESHED`
    el día siguiente.
 

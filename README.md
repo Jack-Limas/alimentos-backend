@@ -48,12 +48,14 @@ lo despierta en hasta ~1 minuto. Al abrir la app después de un rato:
 - la IA tiene su propio servicio: si estaba dormida, la primera propuesta `AI_ASSISTED` puede salir
   **degradada** (resultado de reglas, avisado en la pantalla); la siguiente ya usa la IA.
 
-**Mantenerlo despierto solo**: `.github/workflows/keep-awake.yml` (opcional) hace ping a `/health`
-cada 14 minutos **de 6:00 a 22:00 en Bogotá**. Se activa definiendo la variable del repositorio
-`KEEP_AWAKE_URL` con el origen del backend. No se hace 24/7 a propósito: el plan gratis da **750
-horas de instancia al mes compartidas** entre los servicios gratis de la cuenta; el backend despierto
-todo el día usa ~720 h y dejaría sin horas a la IA (Render suspende los servicios hasta el mes
-siguiente). Con el horario diurno son ~480 h. Los pings a `/health` no rejuvenecen datos.
+**Mantenerlo despierto solo**: `.github/workflows/keep-awake.yml` existe pero está
+**desactivado** (sin `schedule`; solo se puede lanzar a mano). **No debe activarse si hay otros
+servicios en la misma cuenta de Render**: el plan gratis da **750 horas de instancia al mes
+compartidas** entre todos los servicios gratis de la cuenta; el backend despierto todo el día usa
+~720 h y dejaría sin horas a la IA y a cualquier otro servicio (Render los suspende hasta el mes
+siguiente). Incluso en horario diurno (6:00–22:00 en Bogotá, ~480 h) hay que contar las horas de
+los demás servicios. En su lugar, el frontend despierta los servicios cuando alguien visita la app
+(`/api/wake`, ver el README del frontend). Los pings a `/health` no rejuvenecen datos.
 
 ## Arquitectura
 

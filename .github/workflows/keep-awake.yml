@@ -1,4 +1,4 @@
-name: Keep awake (opt-in)
+name: Keep awake (disabled)
 
 # Render's free services sleep after ~15 minutes without traffic. This pings
 # GET /health every 14 minutes from 06:00 to 22:00 in Bogota (11:00-03:00 UTC),
@@ -11,10 +11,15 @@ name: Keep awake (opt-in)
 # origin. /health never triggers the daily demo refresh (only a login or
 # GET /public/impact do), so these pings change no data.
 
+# DISABLED: no schedule, so it only runs when started by hand (Actions → Run workflow).
+# Do NOT enable it while other services share the Render account: the 750 free
+# instance-hours a month are shared, and keeping this one awake could suspend the
+# rest. The frontend wakes the services when someone visits instead (/api/wake).
+# To enable it anyway, add back:
+#   schedule:
+#     - cron: '*/14 11-23 * * *'
+#     - cron: '*/14 0-2 * * *'
 on:
-  schedule:
-    - cron: '*/14 11-23 * * *'
-    - cron: '*/14 0-2 * * *'
   workflow_dispatch:
 
 permissions: {}

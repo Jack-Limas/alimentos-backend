@@ -77,6 +77,11 @@ export const envSchema = z.object({
   WORKER_TASK_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(30_000),
   // Largest benchmark size: its main-thread run blocks the server for everyone (8000 on a free plan).
   BENCHMARK_MAX_SIZE: z.coerce.number().int().min(1_000).max(30_000).default(30_000),
+  // Lazy daily demo refresh after a login or GET /public/impact (off unless set to "true").
+  DEMO_DAILY_REFRESH: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
 
   // Product photos [EXTRA]
   CLOUDINARY_URL: optionalString,

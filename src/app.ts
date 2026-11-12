@@ -5,6 +5,12 @@ import type { Env } from './config/env.js';
 import { buildLoggerOptions } from './config/logger.js';
 import { adminRoutes, createAdminController } from './modules/admin/index.js';
 import {
+  createDemoRefreshService,
+  createPrismaDemoRefreshStore,
+  type DemoRefreshService,
+  type DemoRefreshStore,
+} from './modules/demo/index.js';
+import {
   aiRoutes,
   createAiClient,
   createAiController,
@@ -102,12 +108,20 @@ import {
 import { createPrismaUserRepository, type UserRepository } from './modules/users/index.js';
 import apiMetricsPlugin from './plugins/api-metrics.js';
 import auth from './plugins/auth.js';
+import demoRefresh from './plugins/demo-refresh.js';
 import errorHandler from './plugins/error-handler.js';
 import security from './plugins/security.js';
 import serverTiming from './plugins/server-timing.js';
 import { systemClock, type Clock } from './shared/clock.js';
 import { PUBLIC_RATE_LIMIT } from './shared/http/rate-limiter.js';
 import { createLazyTaskPool, type TaskPool } from './workers/index.js';
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    /** The demo refresh service (tests await `settled()`). */
+    demoRefresh: DemoRefreshService;
+  }
+}
 
 export const API_PREFIX = '/api/v1';
 /** Largest JSON body accepted (Fastify's default, set explicitly): nothing in the API needs more. */
@@ -124,6 +138,8 @@ export interface AppRepositories {
   orders: OrderRepository;
   distribution: DistributionRepository;
   reports: ReportsRepository;
+  /** Demo data refresh (app_meta anchor + date shift, under a lock). */
+  demoRefresh: DemoRefreshStore;
 }
 
 export interface AppDeps {
@@ -144,7 +160,11 @@ export interface AppDeps {
     Partial<
       Pick<
         Env,
-        'WORKER_POOL_SIZE' | 'WORKER_TASK_TIMEOUT_MS' | 'TRUST_PROXY' | 'BENCHMARK_MAX_SIZE'
+        | 'WORKER_POOL_SIZE'
+        | 'WORKER_TASK_TIMEOUT_MS'
+        | 'TRUST_PROXY'
+        | 'BENCHMARK_MAX_SIZE'
+        | 'DEMO_DAILY_REFRESH'
       >
     >;
   /** Defaults to a real `SELECT 1` through Prisma. Tests inject a fake. */
@@ -206,6 +226,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       orders: createPrismaOrderRepository(prisma),
       distribution: createPrismaDistributionRepository(prisma),
       reports: createPrismaReportsRepository(prisma),
+      demoRefresh: createPrismaDemoRefreshStore(prisma),
     };
     app.addHook('onClose', async () => {
       await prisma.$disconnect();
@@ -405,6 +426,28 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     prefix: `${API_PREFIX}/metrics`,
     controller: createMetricsController(metricsService),
   });
+  // Lazy daily demo refresh: only with DEMO_DAILY_REFRESH=true (off by default and in tests).
+  const demoRefreshService = createDemoRefreshService({
+    store: repositories.demoRefresh,
+    audit: auditService,
+    clock,
+    timeZone: env.APP_TIMEZONE,
+    log: app.log,
+  });
+  app.decorate('demoRefresh', demoRefreshService);
+  if (env.DEMO_DAILY_REFRESH) {
+    await app.register(demoRefresh, {
+      service: demoRefreshService,
+      triggers: [
+        { method: 'POST', url: `${API_PREFIX}/auth/login`, trigger: 'login' },
+        { method: 'GET', url: `${API_PREFIX}/public/impact`, trigger: 'public-impact' },
+      ],
+    });
+    app.addHook('onClose', async () => {
+      await demoRefreshService.settled();
+    });
+  }
+
   await app.register(adminRoutes, {
     prefix: `${API_PREFIX}/admin`,
     controller: createAdminController({

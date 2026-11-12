@@ -6,6 +6,7 @@ import { todayIn } from '../src/modules/inventory/domain/index.js';
 import { createBcryptHasher } from '../src/modules/auth/password-hasher.js';
 import { createPrismaUserRepository } from '../src/modules/users/user.prisma-repository.js';
 import { createPrismaCatalogSeedStore } from '../src/seed/catalog-seed.prisma-store.js';
+import { parseDemoUsersConfig, seedDemoUsers } from '../src/seed/demo-users.js';
 import { seedCatalog } from '../src/seed/seed-catalog.js';
 import { createPrismaOrdersSeedStore } from '../src/seed/orders-seed.prisma-store.js';
 import { seedOrders } from '../src/seed/seed-orders.js';
@@ -30,9 +31,19 @@ async function main(): Promise<void> {
   const timeZone = businessTimeZone();
 
   const users = createPrismaUserRepository(prisma);
-  const seeded = await seedUsers(users, createBcryptHasher(), config);
+  const hasher = createBcryptHasher();
+  const seeded = await seedUsers(users, hasher, config);
   for (const user of seeded) {
     process.stdout.write(`Seeded ${user.role}: ${user.email}\n`);
+  }
+  // Demo accounts for the evaluator: optional, skipped with a notice when not configured.
+  const demo = parseDemoUsersConfig(process.env);
+  if (demo.config) {
+    for (const user of await seedDemoUsers(users, hasher, demo.config)) {
+      process.stdout.write(`Seeded demo ${user.role}: ${user.email}\n`);
+    }
+  } else {
+    process.stdout.write(`Notice: ${demo.skipped}\n`);
   }
 
   const admin = await users.findByEmail(normalizeEmail(config.admin.email));

@@ -157,7 +157,8 @@ const codes = (proposal: ProposalDetailDto) => proposal.orders.map((o) => o.code
 const post = (ctx: Context, url: string, token = ctx.adminToken, payload: unknown = {}) =>
   call(ctx.app, token, 'POST', `/api/v1/ai${url}`, payload);
 
-describe('AI_ASSISTED proposals', () => {
+// Each case builds the app and plans twice: seconds under a loaded full run.
+describe('AI_ASSISTED proposals', { timeout: 20_000 }, () => {
   it('reorders only the tied orders with the AI ranks and stores the explanation', async () => {
     const ctx = await setup();
     seedTies(ctx);

@@ -21,6 +21,7 @@
     "seed:history": "tsx prisma/seed-history.ts",
     "seed:demo-users": "tsx prisma/seed-demo-users.ts",
     "seed:refresh-demo": "tsx prisma/refresh-demo.ts",
+    "demo:anchor-report": "tsx prisma/demo-anchor-report.ts",
     "smoke:prod": "tsx scripts/smoke-prod.ts",
     "docs:role-matrix": "tsx scripts/role-matrix.ts"
   },

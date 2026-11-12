@@ -100,6 +100,11 @@ Conventions for anyone (human or AI assistant) working in this repository.
   data in place (`seed:refresh-demo`, `seed:bench`) require `--confirm-host`.
 - `seed:history` and `seed:refresh-demo` must stay idempotent (one run per day changes nothing
   the second time).
+- Demo accounts (`SEED_DEMO_*`) have public passwords: never give them a real account's email and
+  never let the seed update a non-demo user. Missing variables skip them with a notice.
+- The daily demo refresh (`DEMO_DAILY_REFRESH`) only runs from the `onResponse` hook of a
+  successful login or `GET /public/impact`, never from `/health`, never blocking or failing the
+  request, and always through `DemoRefreshService` (its store holds `pg_advisory_xact_lock`).
 - `smoke:prod` never discards a check's failure and never prints credentials or tokens; anything
   it creates (proposals) is discarded so production stock never moves.
 

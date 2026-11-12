@@ -2,18 +2,89 @@
 //   npm run seed:refresh-demo -- --confirm-host=<host of DATABASE_URL> [--anchor=YYYY-MM-DD]
 // It edits dates in place, so it needs the database host named explicitly.
 // --anchor is only for the first run: the business day the demo was seeded.
-// Prints the host and counts only, never the URL, user or password.
+//
+// Correction mode (undo or redo a wrong shift), same rows, same lock:
+//   npm run seed:refresh-demo -- --confirm-host=<host> --shift-days=<N> [--dry-run]
+// Moves everything by exactly N days (negative = back; 1 <= |N| <= 120) and
+// leaves today as the anchor. --dry-run writes nothing: it prints what would
+// move and the dates before/after.
+// Prints the host, counts and dates only, never the URL, user or password.
 import dotenv from 'dotenv';
 import { createAuditService, createPrismaAuditLogRepository } from '../src/modules/audit/index.js';
 import {
   createDemoRefreshService,
   createPrismaDemoRefreshStore,
+  MAX_CORRECTION_DAYS,
   parseAnchorArg,
+  parseShiftDaysArg,
+  type CorrectionResult,
+  type DemoRefreshService,
+  type DemoSnapshot,
 } from '../src/modules/demo/index.js';
 import { todayIn } from '../src/modules/inventory/domain/index.js';
 import { hostOf, parseConfirmHost } from '../src/seed/bench-guard.js';
 
 const out = (line: string) => process.stdout.write(`${line}\n`);
+
+const range = ({ min, max }: { min: string | null; max: string | null }) =>
+  min === null ? '(none)' : `${min} .. ${max ?? ''}`;
+
+/** The latest movement compared with now: after a correction it must not be in the future. */
+function lastMovement(at: Date | null, now: Date): string {
+  if (at === null) return '(none)';
+  const hours = (at.getTime() - now.getTime()) / 3_600_000;
+  const relation =
+    hours > 0
+      ? `IN THE FUTURE by ${(hours / 24).toFixed(1)} days`
+      : `${(-hours / 24).toFixed(1)} days before now`;
+  return `${at.toISOString()} (${relation})`;
+}
+
+function printSnapshot(label: string, snapshot: DemoSnapshot, now: Date): void {
+  out(`  ${label}`);
+  out(`    lots with stock, expiryDate:  ${range(snapshot.stockExpiry)}`);
+  out(`    active orders, dueDate:       ${range(snapshot.activeDue)}`);
+  out(`    latest movement createdAt:    ${lastMovement(snapshot.lastMovementAt, now)}`);
+}
+
+function printCorrection(result: CorrectionResult, today: string): void {
+  const { lots, orders, history, movements } = result.counts;
+  const direction = result.days < 0 ? 'back' : 'forward';
+  out(
+    `seed:refresh-demo ${result.dryRun ? 'DRY RUN (nothing written): would move' : 'moved'} ` +
+      `${String(Math.abs(result.days))} days ${direction}: ` +
+      `${String(lots)} lots, ${String(orders)} orders, ${String(history)} status rows, ${String(movements)} movements`,
+  );
+  out(`  anchor (app_meta.demo_anchor_date) ${result.dryRun ? 'would be' : 'is now'}: ${today}`);
+  const now = new Date();
+  printSnapshot('BEFORE', result.before, now);
+  printSnapshot(result.dryRun ? 'AFTER (computed)' : 'AFTER', result.after, now);
+}
+
+async function correct(
+  service: DemoRefreshService,
+  rawDays: string,
+  argv: readonly string[],
+  today: string,
+): Promise<number> {
+  if (parseAnchorArg(argv) !== undefined) {
+    out('seed:refresh-demo refused: --shift-days and --anchor cannot be combined.');
+    return 1;
+  }
+  const outcome = await service.correct(rawDays, { dryRun: argv.includes('--dry-run') });
+  if (!outcome.ok) {
+    out(
+      outcome.reason === 'NOT_AN_INTEGER'
+        ? 'seed:refresh-demo refused: --shift-days must be a whole number of days (e.g. -61).'
+        : outcome.reason === 'ZERO'
+          ? 'seed:refresh-demo refused: --shift-days=0 moves nothing.'
+          : `seed:refresh-demo refused: |--shift-days| must be at most ${String(MAX_CORRECTION_DAYS)}.`,
+    );
+    return 1;
+  }
+  printCorrection(outcome, today);
+  return 0;
+}
 
 async function main(): Promise<number> {
   dotenv.config({ quiet: true });
@@ -44,6 +115,12 @@ async function main(): Promise<number> {
       timeZone,
       log: { info: () => undefined, error: () => undefined },
     });
+    const shiftDays = parseShiftDaysArg(argv);
+    if (shiftDays !== undefined) return await correct(service, shiftDays, argv, today);
+    if (argv.includes('--dry-run')) {
+      out('seed:refresh-demo refused: --dry-run is only for --shift-days.');
+      return 1;
+    }
     const result = await service.run({ fromArg: parseAnchorArg(argv) });
     switch (result.action) {
       case 'refuse':

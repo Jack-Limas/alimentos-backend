@@ -191,7 +191,12 @@ build en cada push.
 | POST   | `/api/v1/auth/login`                         | `{ accessToken, user }` + cookie `refresh_token`                                                         |
 | POST   | `/api/v1/auth/refresh`                       | `{ accessToken }` + cookie rotada                                                                        |
 | POST   | `/api/v1/auth/logout`                        | 204 y cookie borrada                                                                                     |
-| GET    | `/api/v1/auth/me`                            | `{ data: { id, email, name, role } }` (Bearer)                                                           |
+| GET    | `/api/v1/auth/me`                            | `{ data: { id, email, name, role, isProtected, mustChangePassword } }` (Bearer)                          |
+| POST   | `/api/v1/auth/change-password`               | Contraseña propia; revoca las otras sesiones; cuentas demo → 403 `PROTECTED_ACCOUNT`                     |
+| GET    | `/api/v1/users`                              | Solo `ADMIN`; lista paginada; filtros `search`, `role`, `active`                                         |
+| POST   | `/api/v1/users`                              | Solo `ADMIN`; 201; contraseña temporal; `DUPLICATE` y `USER_LIMIT_REACHED`                               |
+| PATCH  | `/api/v1/users/:id`                          | Solo `ADMIN`; `name`, `role`, `active`; rol nuevo o desactivar cierran sus sesiones                      |
+| POST   | `/api/v1/users/:id/reset-password`           | Solo `ADMIN`; nueva temporal, `mustChangePassword` y cierra sus sesiones                                 |
 | GET    | `/api/v1/audit-logs`                         | Lista paginada; solo `ADMIN`; filtros `action`, `userId`, `from`, `to`                                   |
 | GET    | `/api/v1/products`                           | Lista paginada con métricas; filtros `search`, `category`, `status`, `stockStatus`, `expiringWithinDays` |
 | GET    | `/api/v1/products/:id`                       | `{ data }` con métricas y `lots[]` en orden FEFO                                                         |
@@ -266,6 +271,7 @@ Plantilla en [.env.example](.env.example). Nunca se commitean valores reales.
 | `REFRESH_TOKEN_TTL_DAYS`                 | No              | Días de vida del refresh token (7 por defecto)                  |
 | `LOGIN_MAX_ATTEMPTS`                     | No              | Intentos fallidos por email + IP (5 por defecto)                |
 | `LOGIN_WINDOW_MINUTES`                   | No              | Ventana del límite de intentos (15 por defecto)                 |
+| `MAX_MANAGED_USERS`                      | No              | Usuarios creables desde la app (30 por defecto)                 |
 | `APP_TIMEZONE`                           | No              | Zona del calendario de negocio (`America/Bogota`)               |
 | `SHEET_LINK_SECRET`                      | [EXTRA]         | Enlaces firmados de hoja de despacho                            |
 | `AI_SERVICE_URL`                         | No              | URL de `alimentos-ai`; sin ella la IA queda desactivada         |
@@ -368,7 +374,9 @@ Path=/api/v1/auth; Max-Age = REFRESH_TOKEN_TTL_DAYS`), nunca en el body.
   `request.ip` sea la IP real detrás del proxy de Render.
 - **Autorización**: `app.authenticate` valida el Bearer (`401 TOKEN_EXPIRED` si expiró,
   `401 UNAUTHENTICATED` si es inválido) y `app.authorize('ADMIN')` responde `403 FORBIDDEN`. Los
-  roles siempre se validan en el servidor.
+  roles siempre se validan en el servidor. Además lee al usuario (por id, caché de 5 s): si fue
+  desactivado o cambió de rol la sesión termina al instante (401), y con una contraseña temporal
+  pendiente solo deja usar `/auth/me` y `/auth/change-password` (403 `PASSWORD_CHANGE_REQUIRED`).
 - **Auditoría**: `AuditService.record(...)` guarda `LOGIN_SUCCESS`, `LOGIN_BLOCKED`,
   `TOKEN_REUSE_DETECTED` y `LOGOUT`. Nunca guarda contraseñas ni tokens en `metadata`.
 
@@ -444,6 +452,30 @@ etc. Cada uno tiene categoría, unidad y stock mínimo coherentes.
 - Los productos con stock bajo o agotados se piden por encima de lo disponible (`SHORTAGE_RISK` en
   al menos 3 productos) y los próximos a vencer también aparecen en pedidos.
 - Correrlo otra vez no duplica ni cambia nada.
+
+## Gestión de usuarios
+
+No hay registro público: un `ADMIN` crea las cuentas desde la app (`/api/v1/users`).
+
+- **Crear**: nombre, email, rol y una **contraseña temporal** (10+ caracteres con letras y
+  números, bcrypt 12). El usuario entra con ella y recibe `mustChangePassword: true`: el servidor
+  solo le deja cambiarla (`POST /auth/change-password`) antes de usar cualquier otra ruta.
+- **Límite**: como máximo `MAX_MANAGED_USERS` (30) usuarios creados desde la app; al superarlo,
+  `409 USER_LIMIT_REACHED`. El email es único (`409 DUPLICATE`).
+- **Editar**: nombre, rol y activo. Cambiar el rol o desactivar **cierra todas sus sesiones** (se
+  revocan sus refresh y su access token deja de servir en la siguiente petición). No hay borrado.
+- **Restablecer contraseña**: nueva temporal, `mustChangePassword` y cierra sus sesiones.
+- **Cuentas protegidas**: las del seed (reales y demo) tienen `isProtected`; no se editan,
+  desactivan ni resetean por API (`403 PROTECTED_ACCOUNT`), y las demo tampoco pueden cambiar su
+  contraseña, que es pública y debe seguir funcionando para la evaluación.
+- **Sin bloquearse**: un admin no puede desactivarse, quitarse el rol ADMIN ni resetear su propia
+  contraseña (`409 SELF_LOCKOUT`), y siempre queda al menos un ADMIN activo (`409 LAST_ADMIN`).
+  El límite y el último ADMIN se comprueban dentro de una transacción con
+  `pg_advisory_xact_lock`, así dos peticiones simultáneas no los saltan.
+- **Contraseña propia**: `POST /auth/change-password` verifica la actual con el mismo límite de
+  intentos que el login, y revoca las **otras** sesiones (la actual sigue).
+- **Auditoría**: `USER_CREATED`, `USER_UPDATED`, `USER_PASSWORD_RESET` y `PASSWORD_CHANGED`, sin
+  emails ni contraseñas en `metadata`. El rejuvenecimiento diario de la demo no toca usuarios.
 
 ## Inventario
 

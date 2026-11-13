@@ -34,6 +34,7 @@ flowchart LR
 | `JWT_ACCESS_SECRET`                          | Sí          | ≥ 32 caracteres aleatorios                                                                                                        |
 | `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL_DAYS` | No          | 15m y 7 días por defecto                                                                                                          |
 | `LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_MINUTES` | No          | 5 intentos en 15 minutos por defecto                                                                                              |
+| `MAX_MANAGED_USERS`                          | No          | Usuarios que un ADMIN puede crear desde la app (30 por defecto)                                                                   |
 | `APP_TIMEZONE`                               | No          | `America/Bogota` por defecto                                                                                                      |
 | `TRUST_PROXY`                                | No          | `true` (defecto) o el número de saltos de proxy; ver §6                                                                           |
 | `BENCHMARK_MAX_SIZE`                         | No          | 30000 por defecto; **8000 en el plan gratis** (el modo hilo principal bloquea el servidor mientras corre)                         |
@@ -238,3 +239,23 @@ DATABASE_URL=<main> DIRECT_URL=<main> npm run seed:refresh-demo -- --confirm-hos
 `demo:anchor-report` propone el ancla solo desde el `createdAt` más antiguo de `products` (el día
 de la siembra); lotes, pedidos y movimientos los fecha el seed hacia atrás y se muestran solo como
 referencia.
+
+## 12. Gestión de usuarios (fase 8)
+
+La migración `add_user_management` es aditiva: agrega `users.isProtected` y
+`users.mustChangePassword` y marca como protegidas **todas** las cuentas que ya existen (hoy todas
+salen del seed). Orden, desde tu máquina y con las cadenas de `main` solo en esa sesión:
+
+1. Probarla antes en `dev`: `npx prisma migrate deploy` con `DATABASE_URL`/`DIRECT_URL` de `dev`,
+   y comprobar que el login real y los demo siguen entrando.
+2. Migrar `main` **antes** de desplegar el código nuevo:
+   `DATABASE_URL=<main> DIRECT_URL=<main> npx prisma migrate deploy`. El código anterior sigue
+   funcionando con las columnas nuevas (tienen valor por defecto).
+3. (Opcional) En Render, `MAX_MANAGED_USERS` si se quiere otro límite que 30.
+4. Desplegar el backend (push a `main`) y comprobar `GET /health`.
+5. Desplegar el frontend de la fase 8.
+6. `npm run smoke:prod` y, con el admin, crear un operador de prueba, entrar con su temporal,
+   cambiarla, y desactivarlo al terminar (no hay borrado). Las cuentas demo deben verse como
+   "Protegida" y seguir entrando con su contraseña pública.
+
+Rollback: el código anterior ignora las columnas nuevas; no hace falta revertir la migración.

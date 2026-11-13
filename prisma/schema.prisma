@@ -17,14 +17,18 @@ enum Role {
 }
 
 model User {
-  id           String   @id @default(uuid()) @db.Uuid
-  email        String   @unique
-  name         String
-  passwordHash String
-  role         Role
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                 String   @id @default(uuid()) @db.Uuid
+  email              String   @unique
+  name               String
+  passwordHash       String
+  role               Role
+  active             Boolean  @default(true)
+  /// Seed accounts (real and demo): never edited, deactivated or reset through the API.
+  isProtected        Boolean  @default(false)
+  /// Set by an admin's temporary password: the user must change it before anything else.
+  mustChangePassword Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   // Back-relations required by Prisma; they add no columns to "users".
   refreshTokens      RefreshToken[]

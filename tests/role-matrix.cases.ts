@@ -241,6 +241,30 @@ export const ROLE_MATRIX: MatrixCase[] = [
   { method: 'GET', route: '/api/v1/audit-logs', expected: ADMIN_ONLY(200) },
   { method: 'GET', route: '/api/v1/admin/network-info', expected: ADMIN_ONLY(200) },
 
+  // Users (no public sign-up: only an ADMIN creates accounts)
+  { method: 'GET', route: '/api/v1/users', expected: ADMIN_ONLY(200) },
+  {
+    method: 'POST',
+    route: '/api/v1/users',
+    payload: {},
+    expected: ADMIN_ONLY(400),
+    note: 'empty body',
+  },
+  {
+    method: 'PATCH',
+    route: '/api/v1/users/:id',
+    payload: { name: 'Operador Nuevo' },
+    expected: ADMIN_ONLY(404),
+    note: 'unknown id',
+  },
+  {
+    method: 'POST',
+    route: '/api/v1/users/:id/reset-password',
+    payload: { temporaryPassword: 'Temporal-2026' },
+    expected: ADMIN_ONLY(404),
+    note: 'unknown id',
+  },
+
   // Public
   { method: 'GET', route: '/api/v1/public/impact', expected: ANY },
 ];

@@ -106,7 +106,13 @@ import {
   reportsRoutes,
   type ReportsRepository,
 } from './modules/reports/index.js';
-import { createPrismaUserRepository, type UserRepository } from './modules/users/index.js';
+import {
+  createPrismaUserRepository,
+  createUserController,
+  createUserService,
+  userRoutes,
+  type UserRepository,
+} from './modules/users/index.js';
 import apiMetricsPlugin from './plugins/api-metrics.js';
 import auth from './plugins/auth.js';
 import demoRefresh from './plugins/demo-refresh.js';
@@ -166,6 +172,7 @@ export interface AppDeps {
         | 'TRUST_PROXY'
         | 'BENCHMARK_MAX_SIZE'
         | 'DEMO_DAILY_REFRESH'
+        | 'MAX_MANAGED_USERS'
       >
     >;
   /** Defaults to a real `SELECT 1` through Prisma. Tests inject a fake. */
@@ -297,6 +304,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     metrics: inventoryMetrics,
   });
   const customerService = createCustomerService({ customers: repositories.customers });
+  const userService = createUserService({
+    users: repositories.users,
+    refreshTokens: repositories.refreshTokens,
+    hasher: passwordHasher,
+    clock,
+    maxManagedUsers: env.MAX_MANAGED_USERS ?? 30,
+    sessions: sessionStatus,
+  });
   const orderService = createOrderService({
     orders: repositories.orders,
     customers: repositories.customers,
@@ -353,6 +368,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(auditRoutes, {
     prefix: API_PREFIX,
     controller: createAuditController(auditService),
+  });
+  await app.register(userRoutes, {
+    prefix: `${API_PREFIX}/users`,
+    controller: createUserController(userService),
   });
   await app.register(productRoutes, {
     prefix: `${API_PREFIX}/products`,

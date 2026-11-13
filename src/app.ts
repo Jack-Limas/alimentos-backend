@@ -38,6 +38,7 @@ import {
   createBcryptHasher,
   createPrismaLoginAttemptRepository,
   createPrismaRefreshTokenRepository,
+  createSessionStatusLookup,
   type LoginAttemptRepository,
   type PasswordHasher,
   type RefreshTokenRepository,
@@ -240,9 +241,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const apiMetrics = createApiMetrics();
   await app.register(apiMetricsPlugin, { metrics: apiMetrics });
   await app.register(security, { corsOrigins: env.CORS_ORIGINS });
+  // Every authenticated request checks the user is still active, with the
+  // token's role and without a pending password change.
+  const sessionStatus = createSessionStatusLookup(repositories.users, deps.clock ?? systemClock);
   await app.register(auth, {
     jwtAccessSecret: env.JWT_ACCESS_SECRET,
     accessTokenTtl: env.ACCESS_TOKEN_TTL,
+    sessionStatus,
   });
 
   const appInfo = deps.appInfo ?? readAppInfo();

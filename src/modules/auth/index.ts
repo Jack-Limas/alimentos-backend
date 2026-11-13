@@ -11,5 +11,11 @@ export { createPrismaLoginAttemptRepository } from './login-attempt.prisma-repos
 export type { LoginAttemptRepository } from './login-attempt.repository.js';
 export { BCRYPT_COST, createBcryptHasher, type PasswordHasher } from './password-hasher.js';
 export { REFRESH_COOKIE_NAME, REFRESH_COOKIE_PATH } from './refresh-cookie.js';
+export {
+  createSessionStatusLookup,
+  SESSION_STATUS_TTL_MS,
+  type SessionStatus,
+  type SessionStatusLookup,
+} from './session-status.js';
 export { createPrismaRefreshTokenRepository } from './refresh-token.prisma-repository.js';
 export type { RefreshTokenRepository } from './refresh-token.repository.js';

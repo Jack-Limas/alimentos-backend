@@ -3,6 +3,7 @@ import jwt from '@fastify/jwt';
 import type { Role } from '@prisma/client';
 import type { FastifyPluginAsync, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import fp from 'fastify-plugin';
+import type { SessionStatusLookup } from '../modules/auth/session-status.js';
 import { AppError } from '../shared/errors/index.js';
 
 export interface AccessTokenClaims {
@@ -30,7 +31,19 @@ export interface AuthPluginOptions {
   jwtAccessSecret: string;
   /** e.g. "15m" */
   accessTokenTtl: string;
+  /**
+   * Checks the user behind a valid token on every request: deactivated or
+   * with another role → 401 (the session is over); a pending password change
+   * → 403 PASSWORD_CHANGE_REQUIRED outside PASSWORD_CHANGE_ROUTES.
+   */
+  sessionStatus?: SessionStatusLookup;
 }
+
+/** The only routes a user with a temporary password can use (besides refresh and logout). */
+export const PASSWORD_CHANGE_ROUTES: ReadonlySet<string> = new Set([
+  'GET /api/v1/auth/me',
+  'POST /api/v1/auth/change-password',
+]);
 
 const ROLES: readonly Role[] = ['ADMIN', 'OPERATOR'];
 
@@ -66,6 +79,23 @@ const authPlugin: FastifyPluginAsync<AuthPluginOptions> = async (app, options) =
     }
     if (!hasValidClaims(request.user)) {
       throw new AppError(401, 'UNAUTHENTICATED', 'Authentication required');
+    }
+    const lookup = options.sessionStatus;
+    if (!lookup) return;
+    const status = await lookup.get(request.user.sub);
+    // Deactivated, deleted or with another role since the token was signed.
+    if (!status?.active || status.role !== request.user.role) {
+      throw new AppError(401, 'UNAUTHENTICATED', 'Session is invalid or has expired');
+    }
+    if (
+      status.mustChangePassword &&
+      !PASSWORD_CHANGE_ROUTES.has(`${request.method} ${request.routeOptions.url ?? ''}`)
+    ) {
+      throw new AppError(
+        403,
+        'PASSWORD_CHANGE_REQUIRED',
+        'Change your temporary password before continuing',
+      );
     }
   });
 

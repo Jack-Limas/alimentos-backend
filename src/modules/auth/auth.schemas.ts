@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { passwordSchema } from '../users/password-policy.js';
 
 export const loginBodySchema = z.object({
   // Trimmed before validation; the service also lowercases it.
@@ -8,3 +9,13 @@ export const loginBodySchema = z.object({
 });
 
 export type LoginBody = z.infer<typeof loginBodySchema>;
+
+export const changePasswordBodySchema = z
+  .strictObject({
+    currentPassword: z.string().min(1).max(200),
+    newPassword: passwordSchema,
+  })
+  .refine((body) => body.newPassword !== body.currentPassword, {
+    path: ['newPassword'],
+    message: 'must differ from the current password',
+  });

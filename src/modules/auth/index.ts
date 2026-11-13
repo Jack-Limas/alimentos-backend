@@ -3,6 +3,7 @@ export { authRoutes, type AuthRoutesOptions } from './auth.routes.js';
 export {
   createAuthService,
   normalizeEmail,
+  toPublicUser,
   type AuthConfig,
   type AuthService,
   type PublicUser,

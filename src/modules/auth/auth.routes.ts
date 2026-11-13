@@ -13,6 +13,8 @@ export const authRoutes: FastifyPluginCallback<AuthRoutesOptions> = (app, option
   app.post('/refresh', controller.refresh);
   app.post('/logout', controller.logout);
   app.get('/me', { preHandler: app.authenticate }, controller.me);
+  // Bearer for who; the refresh cookie (same path) tells which session to keep.
+  app.post('/change-password', { preHandler: app.authenticate }, controller.changePassword);
 
   done();
 };

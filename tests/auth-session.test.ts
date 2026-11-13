@@ -103,7 +103,14 @@ describe('GET /api/v1/auth/me', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
-      data: { id: admin.id, email: ADMIN.email, name: admin.name, role: 'ADMIN' },
+      data: {
+        id: admin.id,
+        email: ADMIN.email,
+        name: admin.name,
+        role: 'ADMIN',
+        isProtected: false,
+        mustChangePassword: false,
+      },
     });
     await app.close();
   });

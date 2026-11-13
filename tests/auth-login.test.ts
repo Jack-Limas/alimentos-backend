@@ -25,6 +25,8 @@ describe('POST /api/v1/auth/login', () => {
       email: ADMIN.email,
       name: admin.name,
       role: 'ADMIN',
+      isProtected: false,
+      mustChangePassword: false,
     });
 
     const cookie = refreshSetCookie(res);

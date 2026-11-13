@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthService, PublicUser, RequestContext } from './auth.service.js';
-import { loginBodySchema } from './auth.schemas.js';
+import { changePasswordBodySchema, loginBodySchema } from './auth.schemas.js';
 import { REFRESH_COOKIE_NAME, refreshCookieOptions } from './refresh-cookie.js';
 
 export interface AuthController {
@@ -11,6 +11,7 @@ export interface AuthController {
   refresh: (request: FastifyRequest, reply: FastifyReply) => Promise<{ accessToken: string }>;
   logout: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   me: (request: FastifyRequest) => Promise<{ data: PublicUser }>;
+  changePassword: (request: FastifyRequest) => Promise<{ data: PublicUser }>;
 }
 
 function context(request: FastifyRequest): RequestContext {
@@ -52,5 +53,17 @@ export function createAuthController(service: AuthService): AuthController {
     },
 
     me: async (request) => ({ data: await service.me(request.user.sub) }),
+
+    changePassword: async (request) => {
+      const body = changePasswordBodySchema.parse(request.body);
+      return {
+        data: await service.changePassword(
+          request.user.sub,
+          body,
+          request.cookies[REFRESH_COOKIE_NAME],
+          context(request),
+        ),
+      };
+    },
   };
 }

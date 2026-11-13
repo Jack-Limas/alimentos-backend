@@ -3,7 +3,7 @@
 > Generado con `npm run docs:role-matrix` desde `tests/role-matrix.cases.ts`. No editar a mano:
 > `tests/role-matrix.test.ts` envía cada petición y falla si una ruta falta o cambia su status.
 
-43 rutas × 3 actores = 129 comprobaciones. 5 rutas responden sin sesión, 18 son solo ADMIN y el resto acepta ambos roles.
+44 rutas × 3 actores = 132 comprobaciones. 5 rutas responden sin sesión, 18 son solo ADMIN y el resto acepta ambos roles.
 
 Leyenda: ⛔ 401 sin sesión · 🚫 403 rol sin permiso · ✅ el rol pasa la autorización (el status
 muestra la respuesta a la petición de prueba: 404 id inexistente, 400 cuerpo vacío, 503 IA no
@@ -19,6 +19,7 @@ errores del cuerpo ni la existencia del recurso.
 | `POST` | `/api/v1/auth/refresh` | 401 ⛔ | 401 ⛔ | 401 ⛔ | needs the refresh cookie, not the Bearer token |
 | `POST` | `/api/v1/auth/logout` | 204 ✅ | 204 ✅ | 204 ✅ | idempotent |
 | `GET` | `/api/v1/auth/me` | 401 ⛔ | 200 ✅ | 200 ✅ |  |
+| `POST` | `/api/v1/auth/change-password` | 401 ⛔ | 400 ✅ | 400 ✅ | own password; empty body |
 | `GET` | `/api/v1/products` | 401 ⛔ | 200 ✅ | 200 ✅ |  |
 | `GET` | `/api/v1/products/:id` | 401 ⛔ | 404 ✅ | 404 ✅ | unknown id |
 | `POST` | `/api/v1/products` | 401 ⛔ | 403 🚫 | 400 ✅ | empty body |

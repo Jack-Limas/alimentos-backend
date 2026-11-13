@@ -67,6 +67,13 @@ export const ROLE_MATRIX: MatrixCase[] = [
     note: 'idempotent',
   },
   { method: 'GET', route: '/api/v1/auth/me', expected: SIGNED_IN(200) },
+  {
+    method: 'POST',
+    route: '/api/v1/auth/change-password',
+    payload: {},
+    expected: SIGNED_IN(400),
+    note: 'own password; empty body',
+  },
 
   // Products
   { method: 'GET', route: '/api/v1/products', expected: SIGNED_IN(200) },

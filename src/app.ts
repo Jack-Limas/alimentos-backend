@@ -264,12 +264,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   const clock = deps.clock ?? systemClock;
   const auditService = createAuditService(repositories.auditLogs);
+  const passwordHasher = deps.passwordHasher ?? createBcryptHasher();
   const authService = createAuthService({
     users: repositories.users,
     refreshTokens: repositories.refreshTokens,
     loginAttempts: repositories.loginAttempts,
     audit: auditService,
-    hasher: deps.passwordHasher ?? createBcryptHasher(),
+    sessions: sessionStatus,
+    hasher: passwordHasher,
     signAccessToken: (payload) => app.jwt.sign(payload),
     clock,
     config: {

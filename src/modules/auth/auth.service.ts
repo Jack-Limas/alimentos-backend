@@ -3,10 +3,11 @@ import type { Role } from '@prisma/client';
 import type { Clock } from '../../shared/clock.js';
 import { AppError } from '../../shared/errors/index.js';
 import { AUDIT_ACTIONS } from '../audit/audit-actions.js';
-import type { AuditService } from '../audit/audit.service.js';
+import { buildAuditEntry, type AuditService } from '../audit/audit.service.js';
 import type { UserRecord, UserRepository } from '../users/user.repository.js';
 import type { LoginAttemptRepository } from './login-attempt.repository.js';
 import type { PasswordHasher } from './password-hasher.js';
+import type { SessionStatusLookup } from './session-status.js';
 import { generateRefreshToken, hashRefreshToken } from './refresh-token.js';
 import type { RefreshTokenRecord, RefreshTokenRepository } from './refresh-token.repository.js';
 
@@ -20,6 +21,10 @@ export interface PublicUser {
   email: string;
   name: string;
   role: Role;
+  /** Seed account (real or demo): its password cannot be changed from the app. */
+  isProtected: boolean;
+  /** Signed in with a temporary password: the app only allows changing it. */
+  mustChangePassword: boolean;
 }
 
 export interface RequestContext {
@@ -59,6 +64,8 @@ export interface AuthServiceDeps {
   signAccessToken: (payload: AccessTokenPayload) => string;
   clock: Clock;
   config: AuthConfig;
+  /** Forgets the cached session status after a password change. */
+  sessions?: Pick<SessionStatusLookup, 'forget'>;
 }
 
 export interface AuthService {
@@ -69,6 +76,18 @@ export interface AuthService {
   refresh(refreshToken: string | undefined, ctx: RequestContext): Promise<RefreshResult>;
   logout(refreshToken: string | undefined, ctx: RequestContext): Promise<void>;
   me(userId: string): Promise<PublicUser>;
+  /**
+   * The signed-in user's own password: verifies the current one (with the
+   * login attempt limit), clears mustChangePassword and revokes every OTHER
+   * session (the refresh family of `refreshToken` survives). Seed accounts
+   * (isProtected, e.g. the public demo ones) cannot: 403 PROTECTED_ACCOUNT.
+   */
+  changePassword(
+    userId: string,
+    passwords: { currentPassword: string; newPassword: string },
+    refreshToken: string | undefined,
+    ctx: RequestContext,
+  ): Promise<PublicUser>;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -82,8 +101,15 @@ export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-function toPublicUser(user: UserRecord): PublicUser {
-  return { id: user.id, email: user.email, name: user.name, role: user.role };
+export function toPublicUser(user: UserRecord): PublicUser {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    isProtected: user.isProtected,
+    mustChangePassword: user.mustChangePassword,
+  };
 }
 
 function unauthenticated(message = SESSION_INVALID_MESSAGE): AppError {
@@ -103,6 +129,16 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       refreshExpiresAt: new Date(clock().getTime() + config.refreshTokenTtlDays * DAY_MS),
       refreshMaxAgeSeconds: config.refreshTokenTtlDays * (DAY_MS / 1000),
     };
+  }
+
+  function tooManyAttempts(retryAfter: number): AppError {
+    return new AppError(
+      429,
+      'TOO_MANY_REQUESTS',
+      'Too many failed login attempts, try again later',
+      { retryAfterSeconds: retryAfter },
+      { 'Retry-After': String(retryAfter) },
+    );
   }
 
   /** Seconds until the (email, ip) pair can try again, or null if not blocked. */
@@ -146,13 +182,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
           metadata: { email, retryAfterSeconds: retryAfter },
           ip: ctx.ip,
         });
-        throw new AppError(
-          429,
-          'TOO_MANY_REQUESTS',
-          'Too many failed login attempts, try again later',
-          { retryAfterSeconds: retryAfter },
-          { 'Retry-After': String(retryAfter) },
-        );
+        throw tooManyAttempts(retryAfter);
       }
 
       const user = await users.findByEmail(email);
@@ -271,6 +301,62 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
         throw unauthenticated();
       }
       return toPublicUser(user);
+    },
+
+    async changePassword(userId, passwords, refreshToken, ctx) {
+      const user = await users.findById(userId);
+      if (!user?.active) throw unauthenticated();
+      if (user.isProtected) {
+        throw new AppError(
+          403,
+          'PROTECTED_ACCOUNT',
+          'The password of this account cannot be changed from the app',
+        );
+      }
+
+      // Same limit as the login, on the same (email, ip) counter: guessing the
+      // current password here is no cheaper than at /auth/login.
+      const retryAfter = await blockedForSeconds(user.email, ctx.ip);
+      if (retryAfter !== null) throw tooManyAttempts(retryAfter);
+      if (!(await hasher.compare(passwords.currentPassword, user.passwordHash))) {
+        await loginAttempts.record({
+          email: user.email,
+          ip: ctx.ip,
+          success: false,
+          createdAt: clock(),
+        });
+        throw new AppError(401, 'INVALID_CREDENTIALS', 'The current password is incorrect');
+      }
+
+      const updated = await users.setPassword(
+        user.id,
+        await hasher.hash(passwords.newPassword),
+        false,
+        buildAuditEntry({
+          userId: user.id,
+          action: AUDIT_ACTIONS.PASSWORD_CHANGED,
+          entity: 'User',
+          entityId: user.id,
+          metadata: { temporary: user.mustChangePassword },
+          ip: ctx.ip,
+        }),
+      );
+      await loginAttempts.record({
+        email: user.email,
+        ip: ctx.ip,
+        success: true,
+        createdAt: clock(),
+      });
+
+      // Keep the session making the request; close every other one.
+      const current = refreshToken
+        ? await refreshTokens.findByHash(hashRefreshToken(refreshToken))
+        : null;
+      const keep =
+        current?.userId === user.id && current.revokedAt === null ? current.familyId : undefined;
+      await refreshTokens.revokeAllForUser(user.id, clock(), keep);
+      deps.sessions?.forget(user.id);
+      return toPublicUser(updated);
     },
   };
 }

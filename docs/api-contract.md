@@ -129,9 +129,9 @@ stateDiagram-v2
 |---|---|
 | 400 | `VALIDATION_ERROR` |
 | 401 | `UNAUTHENTICATED`, `INVALID_CREDENTIALS`, `TOKEN_EXPIRED` |
-| 403 | `FORBIDDEN` |
+| 403 | `FORBIDDEN`, `PROTECTED_ACCOUNT` (cuenta del seed: no se edita, desactiva, resetea ni cambia su contraseña por API), `PASSWORD_CHANGE_REQUIRED` (contraseña temporal pendiente de cambiar) |
 | 404 | `NOT_FOUND` |
-| 409 | `INVALID_STATUS_TRANSITION`, `INSUFFICIENT_STOCK`, `STALE_PROPOSAL`, `DUPLICATE`, `BENCHMARK_RUNNING` |
+| 409 | `INVALID_STATUS_TRANSITION`, `INSUFFICIENT_STOCK`, `STALE_PROPOSAL`, `DUPLICATE`, `BENCHMARK_RUNNING`, `USER_LIMIT_REACHED` (`details.limit`), `SELF_LOCKOUT` (un admin no puede desactivarse, quitarse el rol ADMIN ni resetear su propia contraseña), `LAST_ADMIN` (debe quedar al menos un ADMIN activo) |
 | 413 | `PAYLOAD_TOO_LARGE` (cuerpo de más de 1 MiB) |
 | 429 | `TOO_MANY_REQUESTS` (incluye `Retry-After`) |
 | 503 | `AI_UNAVAILABLE` (con `details.category`) |
@@ -152,12 +152,15 @@ Roles: **A** = ADMIN, **O** = OPERATOR, **P** = público.
 ### 4.2 Autenticación — [OBL] (igual que ObraIQ)
 | Método | Ruta | Rol | Cuerpo → Respuesta |
 |---|---|---|---|
-| POST | `/auth/login` | P | `{ email, password }` → `{ accessToken, user }` + `Set-Cookie: refresh_token` (HttpOnly, Secure, SameSite=None, Path=/api/v1/auth). 429 tras N intentos fallidos por email+IP |
+| POST | `/auth/login` | P | `{ email, password }` → `{ accessToken, user }` (`user` = `{ id, email, name, role, isProtected, mustChangePassword }`) + `Set-Cookie: refresh_token` (HttpOnly, Secure, SameSite=None, Path=/api/v1/auth). 429 tras N intentos fallidos por email+IP |
 | POST | `/auth/refresh` | P (cookie) | → `{ accessToken }` + cookie rotada. Reuso de un refresh revocado → se revoca toda la familia |
 | POST | `/auth/logout` | cookie (sin Bearer) | revoca la familia del refresh de la cookie y la borra; responde 204 aunque no haya cookie |
-| GET | `/auth/me` | A, O | `{ id, email, name, role }` |
+| GET | `/auth/me` | A, O | `{ data: { id, email, name, role, isProtected, mustChangePassword } }` |
+| POST | `/auth/change-password` | A, O | `{ currentPassword, newPassword }` → `{ data: user }`. Verifica la actual (401 `INVALID_CREDENTIALS`; mismo límite de intentos que el login, 429), nueva de 10+ caracteres con letras y números y distinta de la actual, `mustChangePassword = false`, revoca las **otras** familias de refresh (la de la cookie sigue). Cuentas protegidas (demo): 403 `PROTECTED_ACCOUNT` |
 
 El access token va en `Authorization: Bearer`; vive en memoria con copia en sessionStorage.
+
+En cada petición autenticada el servidor comprueba además al usuario (lectura por id con caché de 5 s, que se invalida al cambiarlo): si fue desactivado o cambió de rol → 401 `UNAUTHENTICATED` (la sesión termina); si tiene `mustChangePassword` → 403 `PASSWORD_CHANGE_REQUIRED` en todo excepto `GET /auth/me` y `POST /auth/change-password` (y `/auth/refresh` y `/auth/logout`, que no usan el Bearer).
 
 El access token es un JWT `{ sub, role }` firmado con `JWT_ACCESS_SECRET` (duración `ACCESS_TOKEN_TTL`). El refresh token es **opaco** (48 bytes aleatorios en base64url): en la BD solo se guarda su hash SHA-256, viaja únicamente en la cookie `refresh_token` y dura `REFRESH_TOKEN_TTL_DAYS`. Cada refresh lo rota dentro de la misma familia; presentar uno ya rotado revoca toda la familia.
 
@@ -415,7 +418,12 @@ El cliente solo envía IDs (en la ruta) y `{ locale?: "es" | "en" }` (por defect
 |---|---|---|---|
 | GET | `/audit-logs` | A | [OBL] |
 | GET | `/admin/network-info` | A | `{ data: { ip, ips, forwardedFor, remoteAddress, trustProxy } }` para fijar `TRUST_PROXY`; deja `NETWORK_INFO_VIEWED` en la auditoría |
-| GET/POST/PATCH | `/users` | A | [EXTRA] (las cuentas salen del seed) |
+| GET | `/users` | A | Lista paginada; filtros `search` (nombre o email), `role`, `active` (`true`/`false`). Cada usuario: `{ id, email, name, role, active, isProtected, mustChangePassword, createdAt }` (nunca `passwordHash`) |
+| POST | `/users` | A | `{ email, name, role, temporaryPassword }` → 201 `{ data: user }` con `mustChangePassword: true`. Email único (409 `DUPLICATE`); contraseña de 10+ caracteres con letras y números (bcrypt 12); como máximo `MAX_MANAGED_USERS` usuarios no protegidos (409 `USER_LIMIT_REACHED`) |
+| PATCH | `/users/:id` | A | `{ name?, role?, active? }` → `{ data: user }`. Cambiar el rol o desactivar revoca todas sus sesiones. Cuenta protegida: 403 `PROTECTED_ACCOUNT`; sobre sí mismo sin ADMIN o desactivado: 409 `SELF_LOCKOUT`; sin ADMIN activo restante: 409 `LAST_ADMIN` |
+| POST | `/users/:id/reset-password` | A | `{ temporaryPassword }` → `{ data: user }` con `mustChangePassword: true`; revoca sus sesiones. Protegida: 403; la propia: 409 `SELF_LOCKOUT` |
+
+No hay registro público ni borrado: las cuentas del seed (reales y demo) son `isProtected` y no se tocan por API; las demás se desactivan con `PATCH { active: false }`. Todo queda auditado (`USER_CREATED`, `USER_UPDATED`, `USER_PASSWORD_RESET`, `PASSWORD_CHANGED`), sin emails ni contraseñas en `metadata`.
 
 ---
 
@@ -451,7 +459,8 @@ El cliente solo envía IDs (en la ruta) y `{ locale?: "es" | "en" }` (por defect
 | backend | `NODE_ENV`, `PORT` | Render inyecta `PORT`; local 4000 |
 | backend | `DATABASE_URL`, `DIRECT_URL` | Neon (pooled / directa para migraciones) |
 | backend | `JWT_ACCESS_SECRET`, `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL_DAYS` | Autenticación (refresh opaco: no necesita secreto) |
-| backend | `LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_MINUTES` | Límite de intentos de login por email + IP |
+| backend | `LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_MINUTES` | Límite de intentos de login (y de `change-password`) por email + IP |
+| backend | `MAX_MANAGED_USERS` | Usuarios que un ADMIN puede crear en la app (30 por defecto; las cuentas protegidas del seed no cuentan) |
 | backend | `APP_TIMEZONE` | Zona IANA del calendario de negocio (por defecto `America/Bogota`): "hoy", días hasta el vencimiento y vencidos se calculan en esta zona |
 | backend | `SHEET_LINK_SECRET` | Enlaces firmados [EXTRA] |
 | backend | `CORS_ORIGINS` | Lista separada por comas |

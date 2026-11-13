@@ -42,7 +42,7 @@ export function createTestRepositories() {
     movements: inventory.movements,
   });
   const base = {
-    users: createInMemoryUserRepository(),
+    users: createInMemoryUserRepository([], auditLogs),
     refreshTokens: createInMemoryRefreshTokenRepository(),
     loginAttempts: createInMemoryLoginAttemptRepository(),
     auditLogs,

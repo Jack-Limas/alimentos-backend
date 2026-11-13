@@ -105,10 +105,27 @@ describe('demo accounts: seed', () => {
   });
 
   it('never manages a non-demo account or changes an account role', () => {
-    expect(canManageAsDemo({ name: 'Operador Demo', role: 'OPERATOR' }, 'OPERATOR')).toBe(true);
-    expect(canManageAsDemo({ name: 'Demo · Administrador', role: 'ADMIN' }, 'ADMIN')).toBe(true);
-    expect(canManageAsDemo({ name: 'María Pérez', role: 'ADMIN' }, 'ADMIN')).toBe(false);
-    expect(canManageAsDemo({ name: 'Operador Demo', role: 'OPERATOR' }, 'ADMIN')).toBe(false);
+    const demo = { name: 'Operador Demo', role: 'OPERATOR' as const, isProtected: true };
+    expect(canManageAsDemo(demo, 'OPERATOR')).toBe(true);
+    expect(
+      canManageAsDemo({ name: 'Demo · Administrador', role: 'ADMIN', isProtected: true }, 'ADMIN'),
+    ).toBe(true);
+    expect(
+      canManageAsDemo({ name: 'María Pérez', role: 'ADMIN', isProtected: true }, 'ADMIN'),
+    ).toBe(false);
+    expect(canManageAsDemo(demo, 'ADMIN')).toBe(false);
+    // Created in the app by an ADMIN: never taken over by the seed, whatever its name.
+    expect(canManageAsDemo({ ...demo, isProtected: false }, 'OPERATOR')).toBe(false);
+  });
+
+  it('seeds the real and demo accounts protected, without a pending password change', async () => {
+    const users = createInMemoryUserRepository();
+    await seedUsers(users, testHasher, realConfig);
+    await seedDemoUsers(users, testHasher, configOf(demoEnv));
+    expect(users.users.size).toBe(4);
+    for (const user of users.users.values()) {
+      expect(user).toMatchObject({ isProtected: true, mustChangePassword: false });
+    }
   });
 
   it('refuses to turn an existing non-demo account into a demo one', async () => {

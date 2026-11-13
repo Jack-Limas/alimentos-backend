@@ -34,11 +34,15 @@ const LEGACY_DEMO_NAMES: readonly string[] = ['Demo · Administrador', 'Demo · 
  * users this seed ever looks up). The protection stays: a user that already
  * has that email is only updated when it was created as a demo account (a
  * demo name, current or legacy) and keeps its role. Anyone else's account is
- * never turned into a demo one or given a public password.
+ * never turned into a demo one or given a public password; neither is a user
+ * an ADMIN created in the app (isProtected false), even with a demo name.
  */
-export function canManageAsDemo(existing: { name: string; role: Role }, role: Role): boolean {
+export function canManageAsDemo(
+  existing: { name: string; role: Role; isProtected: boolean },
+  role: Role,
+): boolean {
   const demoName = existing.name === DEMO_NAMES[role] || LEGACY_DEMO_NAMES.includes(existing.name);
-  return demoName && existing.role === role;
+  return existing.isProtected && demoName && existing.role === role;
 }
 
 export interface DemoUsersConfig {

@@ -31,6 +31,18 @@ export function createPrismaRefreshTokenRepository(prisma: PrismaClient): Refres
       return count;
     },
 
+    async revokeAllForUser(userId, revokedAt, exceptFamilyId) {
+      const { count } = await prisma.refreshToken.updateMany({
+        where: {
+          userId,
+          revokedAt: null,
+          ...(exceptFamilyId ? { familyId: { not: exceptFamilyId } } : {}),
+        },
+        data: { revokedAt },
+      });
+      return count;
+    },
+
     async rotate(currentId, revokedAt, next) {
       try {
         await prisma.$transaction(async (tx) => {

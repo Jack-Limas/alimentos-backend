@@ -25,6 +25,11 @@ export interface RefreshTokenRepository {
   /** Revokes every still-active token of the family. Returns how many were revoked. */
   revokeFamily(familyId: string, revokedAt: Date): Promise<number>;
   /**
+   * Revokes every still-active token of the user (every session), except the
+   * family `exceptFamilyId` when given (the session making the request).
+   */
+  revokeAllForUser(userId: string, revokedAt: Date, exceptFamilyId?: string): Promise<number>;
+  /**
    * In one transaction: revokes `currentId` (pointing it to `next.id`) and
    * creates `next`. Returns false, creating nothing, when `currentId` was
    * already revoked (e.g. a concurrent rotation won the race).

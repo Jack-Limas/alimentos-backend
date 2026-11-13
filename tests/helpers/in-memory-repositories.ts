@@ -8,13 +8,34 @@ import type {
   RefreshTokenRecord,
   RefreshTokenRepository,
 } from '../../src/modules/auth/refresh-token.repository.js';
-import type { UserRecord, UserRepository } from '../../src/modules/users/user.repository.js';
+import type { NewAuditLog } from '../../src/modules/audit/index.js';
+import type {
+  UserFilter,
+  UserRecord,
+  UserRepository,
+} from '../../src/modules/users/user.repository.js';
 
 // In-memory implementations of the same repository interfaces used in production.
 // Tests exercise the real services and routes without a database.
 
-export function createInMemoryUserRepository(initial: UserRecord[] = []) {
+export function createInMemoryUserRepository(
+  initial: UserRecord[] = [],
+  auditLog?: AuditLogRepository,
+) {
   const users = new Map(initial.map((user) => [user.id, { ...user }]));
+  const audit = async (entry: NewAuditLog) => {
+    await auditLog?.create(entry);
+  };
+  const matches = (user: UserRecord, filter: UserFilter) => {
+    const search = filter.search?.toLowerCase();
+    return (
+      (!search ||
+        user.name.toLowerCase().includes(search) ||
+        user.email.toLowerCase().includes(search)) &&
+      (!filter.role || user.role === filter.role) &&
+      (filter.active === undefined || user.active === filter.active)
+    );
+  };
 
   const repository: UserRepository & { users: Map<string, UserRecord> } = {
     users,
@@ -24,10 +45,76 @@ export function createInMemoryUserRepository(initial: UserRecord[] = []) {
     upsertByEmail(input) {
       const existing = [...users.values()].find((user) => user.email === input.email);
       const user: UserRecord = existing
-        ? { ...existing, ...input }
-        : { id: randomUUID(), active: true, ...input };
+        ? { ...existing, ...input, isProtected: true, mustChangePassword: false }
+        : {
+            id: randomUUID(),
+            active: true,
+            isProtected: true,
+            mustChangePassword: false,
+            createdAt: new Date(),
+            ...input,
+          };
       users.set(user.id, user);
       return Promise.resolve(user);
+    },
+    list(filter, page) {
+      const all = [...users.values()]
+        .filter((user) => matches(user, filter))
+        .sort(
+          (a, b) =>
+            Number(b.isProtected) - Number(a.isProtected) ||
+            a.name.localeCompare(b.name) ||
+            a.id.localeCompare(b.id),
+        );
+      return Promise.resolve({
+        items: all.slice(page.skip, page.skip + page.take),
+        total: all.length,
+      });
+    },
+    async createManaged(input, limit, entry) {
+      if ([...users.values()].filter((user) => !user.isProtected).length >= limit) {
+        return { kind: 'limit' };
+      }
+      if ([...users.values()].some((user) => user.email === input.email)) {
+        return { kind: 'duplicate' };
+      }
+      const user: UserRecord = {
+        ...input,
+        active: true,
+        isProtected: false,
+        mustChangePassword: true,
+        createdAt: new Date(),
+      };
+      users.set(user.id, user);
+      await audit(entry);
+      return { kind: 'created', user: { ...user } };
+    },
+    async updateManaged(id, patch, entry) {
+      const current = users.get(id);
+      if (!current) return { kind: 'not-found' };
+      const next: UserRecord = {
+        ...current,
+        ...(patch.name !== undefined ? { name: patch.name } : {}),
+        ...(patch.role !== undefined ? { role: patch.role } : {}),
+        ...(patch.active !== undefined ? { active: patch.active } : {}),
+      };
+      const losesAdmin =
+        current.role === 'ADMIN' && current.active && (next.role !== 'ADMIN' || !next.active);
+      const otherAdmins = [...users.values()].filter(
+        (user) => user.id !== id && user.role === 'ADMIN' && user.active,
+      );
+      if (losesAdmin && otherAdmins.length === 0) return { kind: 'last-admin' };
+      users.set(id, next);
+      await audit(entry);
+      return { kind: 'updated', user: { ...next } };
+    },
+    async setPassword(id, passwordHash, mustChangePassword, entry) {
+      const current = users.get(id);
+      if (!current) throw new Error(`unknown user ${id}`);
+      const next = { ...current, passwordHash, mustChangePassword };
+      users.set(id, next);
+      await audit(entry);
+      return { ...next };
     },
   };
   return repository;
@@ -58,6 +145,20 @@ export function createInMemoryRefreshTokenRepository() {
       let count = 0;
       for (const token of tokens.values()) {
         if (token.familyId === familyId && token.revokedAt === null) {
+          token.revokedAt = revokedAt;
+          count += 1;
+        }
+      }
+      return Promise.resolve(count);
+    },
+    revokeAllForUser(userId, revokedAt, exceptFamilyId) {
+      let count = 0;
+      for (const token of tokens.values()) {
+        if (
+          token.userId === userId &&
+          token.revokedAt === null &&
+          token.familyId !== exceptFamilyId
+        ) {
           token.revokedAt = revokedAt;
           count += 1;
         }

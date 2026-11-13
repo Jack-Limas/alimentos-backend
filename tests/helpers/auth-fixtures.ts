@@ -22,7 +22,15 @@ export const OPERATOR = {
 
 export async function addUser(
   repositories: TestRepositories,
-  input: { email: string; password: string; role: Role; active?: boolean; name?: string },
+  input: {
+    email: string;
+    password: string;
+    role: Role;
+    active?: boolean;
+    name?: string;
+    isProtected?: boolean;
+    mustChangePassword?: boolean;
+  },
 ): Promise<UserRecord> {
   const user: UserRecord = {
     id: randomUUID(),
@@ -31,6 +39,9 @@ export async function addUser(
     passwordHash: await testHasher.hash(input.password),
     role: input.role,
     active: input.active ?? true,
+    isProtected: input.isProtected ?? false,
+    mustChangePassword: input.mustChangePassword ?? false,
+    createdAt: new Date(),
   };
   repositories.users.users.set(user.id, user);
   return user;

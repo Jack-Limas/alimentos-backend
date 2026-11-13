@@ -119,6 +119,8 @@ describe('seed:refresh-demo through the DemoRefreshService (idempotent for a day
     expect(correction.indexOf('if (dryRun)')).toBeLessThan(correction.indexOf('shiftAll(tx'));
     // Parameters, never string concatenation.
     expect(source).not.toMatch(/\$executeRawUnsafe/);
+    // Users are never touched by the refresh (nor by the correction).
+    expect(source).not.toMatch(/"users"|\.user\./);
   });
 
   it('the app_meta migration is additive', () => {
